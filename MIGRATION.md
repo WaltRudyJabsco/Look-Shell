@@ -1,5 +1,8 @@
-# LOOK 0.6.4
+# LOOK 0.6.5
 
-Surgical upgrade from 0.6.3. Existing shell configuration, Ollama memory, secrets, filesystem UI, navigation, and web-search behavior are unchanged.
+Installer compatibility release.
 
-`lo` now knows the directory it was launched from and can use bounded local filesystem tools inside that workspace: list, read, search, and write text files. It cannot escape the starting workspace and it has no arbitrary command-execution tool.
+- Fixes macOS system Bash 3.2 failing at installer line 17 with `zsh: unbound variable`.
+- Replaces the Bash 4 associative-array dependency map with a Bash 3.2-compatible `case` mapper.
+- Runtime behavior is otherwise unchanged from 0.6.4.
+

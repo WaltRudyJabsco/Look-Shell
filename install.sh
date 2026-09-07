@@ -14,11 +14,17 @@ if ! have brew; then
     [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
   fi
 fi
-declare -A P=([zsh]=zsh [python3]=python [git]=git [zoxide]=zoxide [fzf]=fzf [nvim]=neovim [bat]=bat [fortune]=fortune [cowsay]=cowsay)
+package_for() {
+  case "$1" in
+    python3) printf '%s\n' python ;;
+    nvim)    printf '%s\n' neovim ;;
+    *)       printf '%s\n' "$1" ;;
+  esac
+}
 missing=()
 echo; echo "Dependencies"
 for c in zsh python3 git zoxide fzf nvim bat fortune cowsay; do
-  if have "$c"; then echo "✓ $c"; else echo "✗ $c"; missing+=("${P[$c]}"); fi
+  if have "$c"; then echo "✓ $c"; else echo "✗ $c"; missing+=("$(package_for "$c")"); fi
 done
 if have neofetch || have fastfetch; then echo "✓ system fetch"; else echo "✗ system fetch"; missing+=(fastfetch); fi
 if have ollama; then echo "✓ ollama (optional)"; else echo "· ollama (optional; LO chat disabled until installed)"; fi
