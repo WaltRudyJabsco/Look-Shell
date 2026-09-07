@@ -67,3 +67,14 @@ while retaining single-key controls.
 ## 0.4.3
 
 Restored the ASCII `LK` header in `lk help`. Paging behavior from 0.4.2 is unchanged.
+
+## 0.4.4
+
+- `ls` invokes LOOK only when used with no arguments.
+- `ls -l`, `ls -la`, `ls FILE`, and other normal Unix `ls` forms pass through unchanged.
+- `~/.local/bin` is explicitly added to `PATH`, so `lk` remains available after starting a fresh Zsh session.
+
+## 0.4.5
+
+Packaging fix: the ZIP now preserves executable permissions for `install.sh`
+and `lk` on Unix systems, so `./install.sh` works immediately after extraction.

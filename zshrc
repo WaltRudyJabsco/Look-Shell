@@ -3,6 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Powerlevel10k instant prompt: keep near the top.
+export PATH="$HOME/.local/bin:$PATH"
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
@@ -110,7 +111,13 @@ lc()  { ll "$@"; }
 
 # Your original idea survives: normal interactive `ls` means smart LOOK.
 # `command ls` always reaches the real Unix command when you need it.
-alias ls='l'
+ls() {
+  if (( $# == 0 )); then
+    lk
+  else
+    command ls "$@"
+  fi
+}
 
 # Zoxide jump + immediate orientation. These are worth keeping exactly.
 zll() {
