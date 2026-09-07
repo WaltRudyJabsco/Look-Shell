@@ -397,6 +397,83 @@ def edit_path(path:Path)->None:
     except OSError as e: print(f'look: cannot edit {path}: {e}',file=sys.stderr)
 
 
+def open_with(path:Path)->tuple[bool,str]:
+    """Choose an application for a file without changing the system default."""
+    if path.is_dir():
+        return False,'folders are browsed with Enter'
+    if not shutil.which('fzf'):
+        return False,'open-with requires fzf'
+    try:
+        if sys.platform=='darwin':
+            roots=[Path('/Applications'),Path('/System/Applications'),Path.home()/'Applications']
+            apps=[]
+            seen=set()
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                for app in sorted(root.glob('*.app')):
+                    name=app.stem
+                    if name.casefold() in seen:
+                        continue
+                    seen.add(name.casefold()); apps.append((name,app))
+            if not apps:
+                return False,'no applications found'
+            proc=subprocess.run(
+                ['fzf','--prompt','open with › ','--height','40%','--reverse','--border'],
+                input='\n'.join(name for name,_ in apps),text=True,capture_output=True)
+            choice=proc.stdout.strip()
+            if proc.returncode or not choice:
+                return False,'open-with cancelled'
+            app_path=next((app for name,app in apps if name==choice),None)
+            if not app_path:
+                return False,'application not found'
+            launch=subprocess.run(['open','-a',str(app_path),str(path)],capture_output=True,text=True)
+            return (True,'') if launch.returncode==0 else (False,f'could not open with {choice}')
+
+        # Linux: use desktop MIME handlers when gio is available.
+        if shutil.which('xdg-mime') and shutil.which('gio'):
+            mime=subprocess.run(['xdg-mime','query','filetype',str(path)],capture_output=True,text=True).stdout.strip()
+            if not mime:
+                return False,'file type is unknown'
+            roots=[Path.home()/'.local/share/applications',Path('/usr/local/share/applications'),Path('/usr/share/applications')]
+            handlers=[]
+            seen=set()
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                for desktop in root.glob('*.desktop'):
+                    try:
+                        text=desktop.read_text(errors='ignore')
+                    except OSError:
+                        continue
+                    if f'{mime};' not in text and f'MimeType={mime}' not in text:
+                        continue
+                    name=desktop.stem
+                    for line in text.splitlines():
+                        if line.startswith('Name='):
+                            name=line[5:].strip() or name; break
+                    key=(name.casefold(),str(desktop))
+                    if key in seen:
+                        continue
+                    seen.add(key); handlers.append((name,desktop))
+            if not handlers:
+                return False,'no alternate application found for this file type'
+            proc=subprocess.run(
+                ['fzf','--prompt','open with › ','--height','40%','--reverse','--border'],
+                input='\n'.join(name for name,_ in handlers),text=True,capture_output=True)
+            choice=proc.stdout.strip()
+            if proc.returncode or not choice:
+                return False,'open-with cancelled'
+            desktop=next((d for name,d in handlers if name==choice),None)
+            if not desktop:
+                return False,'application not found'
+            launch=subprocess.run(['gio','launch',str(desktop),str(path)],capture_output=True,text=True)
+            return (True,'') if launch.returncode==0 else (False,f'could not open with {choice}')
+        return False,'open-with is unavailable on this system'
+    except (OSError,subprocess.SubprocessError):
+        return False,'open-with failed'
+
+
 def copy_path(path:Path)->bool:
     value=str(path.resolve())
     try:
@@ -467,12 +544,12 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             if filtering:
                 match_word='match' if len(matches)==1 else 'matches'
                 status=(f'{CYAN}  filter: {query}█{RESET}  {GRAY}{len(matches)} {match_word}{RESET}  '
-                        f'{DIM}↑/↓ choose · pgup/pgdn page · Enter open · E edit · Backspace delete · Esc clear{RESET}')
+                        f'{DIM}↑/↓ choose · Enter open · E edit · O with · Y copy · P path · Esc clear{RESET}')
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
                 status=(f'{CYAN}  ▶ {name}{RESET} {GRAY}· {kind}{RESET}  '
-                        f'{DIM}j/k choose · Enter open · e edit · y copy · p path · Esc filter · q quit{RESET}')
+                        f'{DIM}j/k choose · Enter open · E edit · O with · Y copy · P path · Esc filter · q quit{RESET}')
             elif query:
                 status=f'{CYAN}  filter: {query}{RESET}  {DIM}{last}/{len(current)} · Enter select · / edit · Esc clear · q quit{RESET}'
             else:
@@ -519,6 +596,20 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                     if picked and not picked.is_dir():
                         sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush(); edit_path(picked); return
                     notice='folders are browsed with Enter'
+                elif key=='O' and matches:
+                    picked=selected_path()
+                    if picked:
+                        sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush()
+                        opened,message=open_with(picked)
+                        sys.stdout.write(HIDE); sys.stdout.flush()
+                        if not opened and message!='open-with cancelled': notice=message
+                elif key=='Y' and matches:
+                    picked=selected_path()
+                    if picked: notice='copied' if copy_path(picked) else 'clipboard unavailable'
+                elif key=='P' and matches:
+                    picked=selected_path()
+                    if picked:
+                        sys.stdout.write(SHOW+RESET+'\n'+str(picked.resolve())+'\n'); sys.stdout.flush(); return
                 elif key in {'\x7f','\b'}:
                     if query: query=query[:-1]; refresh_filter()
                 elif key=='\x03': break
@@ -558,10 +649,17 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                         break
                     notice=message
                     continue
-                if key=='e':
+                if key in {'e','E'}:
+                    if picked.is_dir(): notice='folders are browsed with Enter'; continue
                     sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush(); edit_path(picked); return
-                if key=='y': notice='copied' if copy_path(picked) else 'clipboard unavailable'; continue
-                if key=='p':
+                if key in {'o','O'}:
+                    sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush()
+                    opened,message=open_with(picked)
+                    sys.stdout.write(HIDE); sys.stdout.flush()
+                    if not opened and message!='open-with cancelled': notice=message
+                    continue
+                if key in {'y','Y'}: notice='copied' if copy_path(picked) else 'clipboard unavailable'; continue
+                if key in {'p','P'}:
                     sys.stdout.write(SHOW+RESET+'\n'+str(picked.resolve())+'\n'); sys.stdout.flush(); return
                 continue
 

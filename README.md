@@ -5,6 +5,7 @@ A portable personal shell environment for macOS and Linux. LOOK combines a respo
 ## Install
 
 ```sh
+chmod +x install.sh
 ./install.sh --dry-run
 ./install.sh
 exec zsh
@@ -32,21 +33,24 @@ The fast vocabulary remains: `l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`, `zll`, `cd
 
 ## Interactive LOOK
 
-In a long listing, press `Enter` (or `/`) to begin filtering. Type any substring; separate words with spaces to require every term (for example, `cache safari`). `Backspace` edits it. Press `Enter` again to accept the filter and enter selection mode. While filtering, `Up`/`Down` scroll one row and `PageUp`/`PageDown` scroll a page without leaving the live filter.
+The short commands (`l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`) enter the interactive LOOK view. Press `Enter` or `/` to start a live filter. Filtering uses substring matching; separate words with spaces to require every term, such as `cache safari`. The highlighted match can be changed immediately with the arrow keys, so nearly identical names never have to be typed to uniqueness.
 
 ```text
-j / k       choose among matching items
-Enter       directory: browse deeper · file: open with OS default
-e           edit selected item with $EDITOR / nvim / vi
-y           copy the selected item's absolute path
-p           print the selected item's absolute path and exit
-Esc         return to filtering / clear
-q           quit
+Up / Down    choose highlighted match
+PageUp/Down  move through long result sets
+Enter        directory: browse deeper · file: open with OS default
+E            edit highlighted file
+O            choose another application to open the file
+Y            copy the absolute path
+P            print the absolute path and exit
+Backspace    delete filter text
+Esc          clear / leave filtering
+q            quit
 ```
 
-Normal paging remains `Space`, `b`, `j/k`, `g/G`, and `q`.
+Capital action keys are intentional while filtering: lowercase letters remain ordinary search text. In the older explicit selection state, lowercase action keys remain accepted as aliases.
 
-LOOK deliberately opens executable files rather than executing them. Running code remains an explicit shell action.
+Bare `lk` and explicit `lk detail`, `lk tree`, and similar commands keep the quick print-and-return behavior when the view fits. LOOK deliberately opens executable files rather than executing them; running code remains an explicit shell action.
 
 ## Secrets
 
@@ -132,3 +136,8 @@ Rapid filter typing is lightly debounced to avoid expensive redraws on every cha
 `lo` now receives the actual starting working directory and a bounded top-level directory snapshot as system context, so references such as “this folder” and “here” have a concrete meaning.
 
 Tool-capable local models also receive four intentionally small filesystem tools rooted to that starting directory: list folders/files (up to three levels), read bounded text files, search filenames and bounded text content, and create/write UTF-8 text files. Paths outside the starting workspace are rejected, binary reads are rejected, large reads/searches are bounded, existing files are protected unless replacement is explicitly requested, and arbitrary shell execution is not exposed.
+
+
+## 1.0.0 — stable LOOK
+
+LOOK 1.0.0 marks the stable filesystem/navigation interface. Live filtering now exposes the complete non-destructive action set without colliding with search text: `E` edit, `O` open with another application, `Y` copy absolute path, and `P` print absolute path and exit. The existing default-open, preview, recursive filtering, navigation, Ollama workspace tools, memory, and installer behavior are otherwise unchanged.
