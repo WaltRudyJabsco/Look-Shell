@@ -1,14 +1,23 @@
 # LOOK Shell
 
-A portable personal shell environment for macOS and Linux. LOOK combines a responsive filesystem renderer, zoxide navigation, fuzzy finding, Neovim integration, diagnostics, and a small interactive file navigator.
+**A small, fast, opinionated filesystem environment for Zsh.**
 
-![LOOK Shell help](screenshots/LOOK_Shell_doctor.png)
+LOOK is a portable personal shell environment for macOS and Linux. It
+adds a responsive filesystem view, fast navigation, live filtering and
+previews, fuzzy finding, Neovim integration, diagnostics, and an
+optional local Ollama assistant --- while leaving the normal Unix shell
+underneath it intact.
+
+It isn't trying to replace the terminal. It's trying to make the
+terminal nicer to live in.
+
+![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
 ![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
 ## Install
 
-```sh
+``` sh
 chmod +x install.sh
 ./install.sh --dry-run
 ./install.sh
@@ -16,137 +25,257 @@ exec zsh
 lk doctor
 ```
 
+The installer uses Homebrew/Linuxbrew for LOOK's dependencies, backs up
+an existing `.zshrc`, preserves existing secrets, installs LOOK under
+`~/.local/share/look`, and exposes `lk` through `~/.local/bin`.
+
+Ollama is optional. LOOK does not install, start, or manage it.
+
+## The basic idea
+
+LOOK has two related interfaces:
+
+-   **`lk`** is the explicit command. It renders a filesystem view and,
+    when the output fits, prints it and returns immediately.
+-   **`l` and the other short commands** enter the interactive
+    filesystem view, where you can filter, preview, navigate, open,
+    edit, and work with paths.
+
+Normal Unix behavior remains available. Bare `ls` invokes LOOK, while
+`ls -l`, `ls -la`, `ls FILE`, and other forms pass directly to the
+system `ls`.
+
 ## Core commands
 
-```text
+``` text
 lk                 smart filesystem view
 lk detail          detailed view
-lk dirs            directories
-lk files           files
-lk tree            tree
+lk dirs            directories only
+lk files           files only
+lk tree            recursive tree
 lk recent          newest first
-lk size            size-oriented
-lk doctor          environment health
-lk config          installed paths
+lk size            size-oriented view
+lk doctor          environment and capability health
+lk config          installed paths and configuration
 lk secrets         secrets status, never contents
 lk help            full command screen
-lk version         version
+lk version         installed version
 ```
 
-The fast vocabulary remains: `l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`, `zll`, `cdl`, `fznv`, `f`, `rs`, and `commands`.
+The fast vocabulary:
+
+``` text
+l                  interactive smart view
+ll                 interactive detail view
+ld                 interactive directories
+lf                 interactive files
+lt                 interactive tree
+lr                 interactive recent
+lz                 interactive size view
+zll WORD           zoxide jump + smart view
+cdl WORD           zoxide jump + detail view
+fznv               fuzzy-find into Neovim
+f                  fuzzy helper
+rs                 reload shell
+commands           personal command reference
+```
+
+`l WORD` is smart navigation. If `WORD` names an explicit directory,
+LOOK enters it directly; otherwise zoxide resolves it from your
+navigation history and LOOK opens there.
 
 ## Interactive LOOK
 
-The short commands (`l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`) enter the interactive LOOK view. Press `Enter` or `/` to start a live filter. Filtering uses substring matching; separate words with spaces to require every term, such as `cache safari`. The highlighted match can be changed immediately with the arrow keys, so nearly identical names never have to be typed to uniqueness.
+The short view commands (`l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`) keep
+LOOK active even when only a few files are present.
 
-```text
+Press `Enter` or `/` to begin a live filter. Matching is
+substring-based, and multiple words form an order-independent AND
+search: `cache safari` finds names containing both terms. In tree mode,
+filtering searches recursively through the displayed depth while
+retaining parent folders as context.
+
+The highlighted result follows the arrow keys immediately. Wide
+terminals place the preview beside the results; narrow terminals place
+it below.
+
+``` text
 Up / Down    choose highlighted match
 PageUp/Down  move through long result sets
 Enter        directory: browse deeper · file: open with OS default
 E            edit highlighted file
-O            choose another application to open the file
-Y            copy the absolute path
-P            print the absolute path and exit
+O            open with another installed application
+Y            copy absolute path
+P            print absolute path and exit
 Backspace    delete filter text
 Esc          clear / leave filtering
 q            quit
 ```
 
-Capital action keys are intentional while filtering: lowercase letters remain ordinary search text. In the older explicit selection state, lowercase action keys remain accepted as aliases.
+The capital action keys are intentional: **lowercase letters remain
+ordinary filter text.** `E`, `O`, `Y`, and `P` therefore work without
+stealing characters from a filename search.
 
-Bare `lk` and explicit `lk detail`, `lk tree`, and similar commands keep the quick print-and-return behavior when the view fits. LOOK deliberately opens executable files rather than executing them; running code remains an explicit shell action.
+LOOK opens executable files rather than executing them. Running code
+remains an explicit shell action.
 
-## Secrets
+### Previews
 
-Real secrets stay in `~/.zsh_secrets`; only `zsh_secrets.example` belongs in Git.
+LOOK keeps previews deliberately lightweight:
 
+-   text and source files show bounded text
+-   directories show compact contents
+-   PDFs show first-page text when `pdftotext` is available
+-   images, media, archives, and other binaries show useful type/size
+    metadata
 
-## 0.4.1
+`Enter` opens a file with the operating-system default. `O` lets you
+choose another installed application for that open without changing the
+default association.
 
-`lk help` now uses a lightweight built-in pager only when the help text exceeds the current terminal height. `doctor`, `config`, and `version` remain immediate.
+## Ollama: `lo`
 
-## 0.4.2
+LOOK includes an optional minimal terminal interface for an
+**already-running Ollama server with an already-loaded model**:
 
-Fixed the `lk help` pager's staircase/zig-zag terminal output. The pager now
-uses cbreak input mode instead of raw mode, preserving normal newline handling
-while retaining single-key controls.
-
-
-## 0.4.3
-
-Restored the ASCII `LK` header in `lk help`. Paging behavior from 0.4.2 is unchanged.
-
-## 0.4.4
-
-- `ls` invokes LOOK only when used with no arguments.
-- `ls -l`, `ls -la`, `ls FILE`, and other normal Unix `ls` forms pass through unchanged.
-- `~/.local/bin` is explicitly added to `PATH`, so `lk` remains available after starting a fresh Zsh session.
-
-## 0.4.5
-
-Packaging fix: the ZIP now preserves executable permissions for `install.sh`
-and `lk` on Unix systems, so `./install.sh` works immediately after extraction.
-
-## 0.5.0 — LOOK Ollama
-
-A surgical local-AI shortcut:
-
-```bash
+``` sh
 lo
 lk o
 lk ollama
 ```
 
-If Ollama is reachable and a model is already loaded, LOOK opens a minimal
-terminal chat using that model. It does not start Ollama, load models, or
-manage them.
+If Ollama is reachable, `lo` detects the currently loaded model and
+opens a terminal conversation. You can also supply the first prompt
+directly:
 
+``` sh
+lo explain this error
+```
 
-## 0.5.1 — Ollama web search
+### Web search
 
-`lo` keeps normal local chat and exposes web search to tool-capable models when `OLLAMA_API_KEY` is available in the environment. `lo search` searches first on every turn, then answers from the current results. The key is inherited from the shell and is never stored by LOOK.
+If `OLLAMA_API_KEY` is available in the shell environment, web search
+can be exposed to tool-capable models.
 
+``` sh
+lo search
+lo search latest Ollama changes
+```
 
-## 0.6.0 — Ollama memory + capability checks
+`lo search` searches first on each turn before answering from current
+results. The API key is inherited from the shell and is never stored by
+LOOK.
 
-`lk doctor` now reports optional Ollama state: binary, local server, loaded model, web-search key, and persistent memory. The installer creates LOOK's private memory state file but does not install Ollama automatically.
+### Workspace awareness
 
-`lo` now carries bounded persistent memory across sessions: five recent compressed exchanges plus one rolling long-term summary. When a sixth recent exchange is added, the oldest is folded into long memory and the recent window stays at five.
+`lo` knows the directory in which it was started and receives a bounded
+snapshot of that workspace. Tool-capable models can use a deliberately
+small filesystem toolset to:
 
-Memory lives at `~/.local/share/look/ollama_memory.json` with mode `0600`.
+-   list files and directories
+-   read bounded text files
+-   search filenames and bounded text content
+-   create or write UTF-8 text files when explicitly requested
 
+The tools are rooted to the starting workspace. Paths cannot escape it,
+binary and oversized operations are rejected or bounded, existing files
+are protected unless replacement is explicitly requested, and arbitrary
+shell execution is not exposed.
 
-## 0.6.1
+### Persistent memory
 
-Renderer fixes:
+`lo` carries a small amount of memory across sessions: five compressed
+recent exchanges plus one rolling long-term summary. When the recent
+window fills, the oldest note is folded into long-term memory.
 
-- Tree mode silently skips protected/unreadable macOS folders instead of flooding the terminal with permission errors.
-- Bare `Esc` reliably exits/clears filter mode; arrow and paging escape sequences still work.
-- `lt` filtering now searches recursively through the same tree depth being displayed, so visible descendants can be found by typing their names.
+``` text
+~/.local/share/look/ollama_memory.json
+```
 
+The memory file uses private permissions (`0600`).
 
-## 0.6.3
+LOOK 1.0.1 also shows lightweight activity feedback during synchronous
+work:
 
-- Filtering now matches substrings, not only filename prefixes.
-- Selection mode adds a responsive preview pane: right-side on wide terminals, bottom on narrow terminals. Text is previewed directly; directories show contents; PDFs use first-page text when `pdftotext` is available; other binaries show type/size metadata.
-- `l WORD` now means smart navigation: explicit directories are entered directly, otherwise Zoxide resolves a previously visited directory before LOOK renders it.
+``` text
+· searching
+· thinking
+· remembering
+```
 
-## 0.6.11 — filter polish
+This makes model, search, and post-answer memory work visibly distinct
+from a hung terminal. `Ctrl-C` and `Ctrl-D` remain safe exit signals
+when control returns to the input prompt.
 
-Rapid filter typing is lightly debounced to avoid expensive redraws on every character. In live filter mode, `E` edits the highlighted file while lowercase letters remain available for searching.
+## Secrets
 
-## 0.6.8 — live filter selection
+Real secrets stay in:
 
-`lo` now receives the actual starting working directory and a bounded top-level directory snapshot as system context, so references such as “this folder” and “here” have a concrete meaning.
+``` text
+~/.zsh_secrets
+```
 
-Tool-capable local models also receive four intentionally small filesystem tools rooted to that starting directory: list folders/files (up to three levels), read bounded text files, search filenames and bounded text content, and create/write UTF-8 text files. Paths outside the starting workspace are rejected, binary reads are rejected, large reads/searches are bounded, existing files are protected unless replacement is explicitly requested, and arbitrary shell execution is not exposed.
+Only `zsh_secrets.example` belongs in Git. `lk secrets` reports status,
+never contents.
 
+## Diagnostics
 
+After installation:
 
-## 1.0.1 — Ollama activity polish
+``` sh
+lk doctor
+```
 
-LOOK Ollama now shows lightweight animated `searching`, `thinking`, and `remembering` states during synchronous work, so the terminal no longer appears hung after an answer or while web search/model calls are running. Ctrl-D and Ctrl-C remain safe exit signals at the next input prompt; model, memory, search, and filesystem behavior are otherwise unchanged.
+It reports the core LOOK environment plus optional Ollama state: binary,
+local server, loaded model, web-search key, and persistent memory.
 
-## 1.0.0 — stable LOOK
+For installed paths and configuration:
 
-LOOK 1.0.0 marks the stable filesystem/navigation interface. Live filtering now exposes the complete non-destructive action set without colliding with search text: `E` edit, `O` open with another application, `Y` copy absolute path, and `P` print absolute path and exit. The existing default-open, preview, recursive filtering, navigation, Ollama workspace tools, memory, and installer behavior are otherwise unchanged.
+``` sh
+lk config
+```
+
+## Requirements
+
+The installer handles LOOK's normal dependencies. The core environment
+uses Zsh, Python 3, Git, zoxide, fzf, Neovim, and a handful of small
+terminal utilities. Powerlevel10k and the configured Zsh plugins are
+installed as part of the shell setup.
+
+Ollama is optional. PDF text previews are enhanced when `pdftotext` is
+available.
+
+## LOOK 1.0
+
+**1.0 is the stable interface.** The 0.x releases were the development
+path that established the renderer, navigation model, live filtering,
+previews, installer, and Ollama integration. The README no longer
+carries the entire incremental development log now that the command
+vocabulary has settled.
+
+### 1.0.1
+
+Adds visible `searching`, `thinking`, and `remembering` feedback to
+Ollama operations so synchronous work is clearly distinguishable from a
+hung terminal. Model, memory, search, and filesystem behavior are
+otherwise unchanged.
+
+### 1.0.0
+
+Establishes the stable LOOK filesystem/navigation interface, including
+the final live-filter action vocabulary:
+
+``` text
+E  edit
+O  open with
+Y  copy absolute path
+P  print absolute path and exit
+```
+
+Lowercase characters remain available for filtering.
+
+------------------------------------------------------------------------
+
+LOOK stays intentionally small: Zsh handles navigation and composition,
+Python handles filesystem presentation, and the ordinary Unix tools
+remain underneath both.
