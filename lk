@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+import os, platform, shutil, subprocess, sys, termios, tty
+from pathlib import Path
+VERSION="0.4.3"
+HOME=Path.home()
+ROOT=Path(__file__).resolve().parent
+RENDERER=ROOT/"look_renderer.py"
+
+def render(args):
+    return subprocess.call([sys.executable,str(RENDERER),*args])
+
+def _page_text(body: str) -> int:
+    """Page long system text only when it exceeds the current terminal."""
+    lines = body.rstrip("\n").splitlines()
+    height = max(6, shutil.get_terminal_size((80, 24)).lines - 1)
+
+    # Non-interactive output should stay pipe-friendly.
+    if len(lines) <= height or not sys.stdin.isatty() or not sys.stdout.isatty():
+        print(body, end="" if body.endswith("\n") else "\n")
+        return 0
+
+    top = 0
+    old = termios.tcgetattr(sys.stdin.fileno())
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        while True:
+            os.system("clear")
+            page = lines[top:top + height - 1]
+            sys.stdout.write("\n".join(page))
+            sys.stdout.write(
+                f"\n\033[2m{min(top + height - 1, len(lines))}/{len(lines)}"
+                " · Space next · b back · g/G ends · q quit\033[0m"
+            )
+            sys.stdout.flush()
+
+            ch = sys.stdin.read(1)
+            if ch == "q":
+                break
+            if ch == " ":
+                if top + height - 1 >= len(lines):
+                    break
+                top = min(len(lines) - 1, top + height - 1)
+            elif ch == "b":
+                top = max(0, top - (height - 1))
+            elif ch == "g":
+                top = 0
+            elif ch == "G":
+                top = max(0, len(lines) - (height - 1))
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    return 0
+
+
+def help_screen():
+    body = f"""
+       ██╗      ██╗  ██╗
+       ██║      ██║ ██╔╝
+       ██║      █████╔╝
+       ██║      ██╔═██╗
+       ███████╗ ██║  ██╗
+       ╚══════╝ ╚═╝  ╚═╝
+
+       LOOK {VERSION} · filesystem, navigation, shell
+
+FILES
+  lk [PATH]            smart view
+  lk detail [PATH]     detailed view
+  lk dirs [PATH]       directories
+  lk files [PATH]      files
+  lk tree [PATH]       tree
+  lk recent [PATH]     newest first
+  lk size [PATH]       size-oriented
+
+SYSTEM
+  lk doctor            check the environment
+  lk config            show installed paths
+  lk secrets           secrets status (never contents)
+  lk version           print version
+  lk help              this glossary
+
+SHORTCUTS
+  l / ls   smart view        ll       details
+  ld       directories       lf       files
+  lt       tree              lr       recent
+  lz       sizes             zll WORD jump + look
+  cdl WORD jump + details    fznv     fuzzy edit
+  f        fuzzy open        rs       reset ritual
+
+LONG LOOK VIEWS
+  Enter      filter
+  j / k      move selection
+  Enter      open file / enter folder
+  e          edit
+  y          copy path
+  p          print path
+  Esc        back / clear
+  Space / b  page forward / back
+  g / G      beginning / end
+  q          quit
+"""
+    return _page_text(body)
+
+def doctor():
+    tools=["zsh","python3","git","zoxide","fzf","nvim","bat","fortune","cowsay"]
+    checks=[(x,shutil.which(x) is not None) for x in tools]
+    checks.append(("neofetch/fastfetch", bool(shutil.which("neofetch") or shutil.which("fastfetch"))))
+    files=[("~/.zshrc",(HOME/".zshrc").exists()),
+           ("~/.zsh_secrets",(HOME/".zsh_secrets").exists()),
+           ("LOOK renderer",RENDERER.exists())]
+    print(f"LOOK {VERSION}\n"+"─"*46)
+    print(f"\nSYSTEM\n  {platform.system()} {platform.release()} · {platform.machine()}")
+    print("\nTOOLS")
+    for n,ok in checks: print(f"  {'✓' if ok else '✗'} {n}")
+    print("\nSHELL")
+    for n,ok in files: print(f"  {'✓' if ok else '✗'} {n}")
+    good=all(ok for _,ok in checks+files)
+    print("\n"+("Everything looks good." if good else "LOOK found something worth checking."))
+    return 0 if good else 1
+
+def main():
+    a=sys.argv[1:]
+    if not a: return render([])
+    cmd=a[0]; rest=a[1:]
+    modes={"detail":"detail","dirs":"dirs","files":"files","tree":"tree","recent":"recent","size":"size"}
+    if cmd in ("help","-h","--help"): return help_screen()
+    if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
+    if cmd=="doctor": return doctor()
+    if cmd=="config":
+        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}")
+        return 0
+    if cmd=="secrets":
+        p=HOME/".zsh_secrets"
+        if not p.exists(): print("LOOK secrets: ~/.zsh_secrets is not present."); return 1
+        mode=oct(p.stat().st_mode & 0o777)
+        print(f"LOOK secrets: {p} exists · permissions {mode} · contents hidden")
+        return 0 if mode=="0o600" else 1
+    if cmd in modes: return render(["--mode", modes[cmd], *rest])
+    return render(a)
+if __name__=="__main__": raise SystemExit(main())
