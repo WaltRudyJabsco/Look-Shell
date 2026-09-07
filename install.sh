@@ -21,6 +21,7 @@ for c in zsh python3 git zoxide fzf nvim bat fortune cowsay; do
   if have "$c"; then echo "✓ $c"; else echo "✗ $c"; missing+=("${P[$c]}"); fi
 done
 if have neofetch || have fastfetch; then echo "✓ system fetch"; else echo "✗ system fetch"; missing+=(fastfetch); fi
+if have ollama; then echo "✓ ollama (optional)"; else echo "· ollama (optional; LO chat disabled until installed)"; fi
 ((${#missing[@]}==0)) || run brew install "${missing[@]}"
 
 ZDIR="${ZSH:-$HOME/.oh-my-zsh}"
@@ -44,6 +45,13 @@ if have lk; then
 fi
 
 run mkdir -p "$HOME/.local/share/look" "$HOME/.local/bin"
+if ((!DRY)); then
+  MEMORY="$HOME/.local/share/look/ollama_memory.json"
+  if [[ ! -f "$MEMORY" ]]; then
+    printf '{"long":"","recent":[]}\n' > "$MEMORY"
+    chmod 600 "$MEMORY"
+  fi
+fi
 run cp "$ROOT/lk" "$HOME/.local/share/look/lk"
 run cp "$ROOT/look_renderer.py" "$HOME/.local/share/look/look_renderer.py"
 run chmod +x "$HOME/.local/share/look/lk"

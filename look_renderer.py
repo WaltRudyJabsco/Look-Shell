@@ -14,6 +14,7 @@ import argparse
 import os
 import shutil
 import stat
+import select
 import subprocess
 import sys
 import termios
@@ -62,11 +63,13 @@ def age_text(ts:float)->str:
     return dt.strftime('%Y-%m-%d')
 
 
-def read_entries(target:Path, hidden:bool=True)->list[Entry]:
+def read_entries(target:Path, hidden:bool=True, quiet:bool=False)->list[Entry]:
     out=[]
     try:
         items=list(target.iterdir())
     except OSError as e:
+        if quiet:
+            return []
         print(f'look: {e}', file=sys.stderr); raise SystemExit(1)
     for p in items:
         if not hidden and p.name.startswith('.'):
@@ -156,20 +159,34 @@ def detail_rows(entries:list[Entry], width:int)->list[str]:
 
 def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='')->list[str]:
     rows=[]
-    def walk(path:Path,prefix:str,level:int):
-        try: kids=read_entries(path,hidden)
-        except SystemExit: return
-        kids=sorted(kids,key=lambda e:(not e.is_dir,e.name.lower()))
-        if query:
-            needle=query.casefold()
-            kids=[e for e in kids if e.name.casefold().startswith(needle)]
+    needle=query.casefold() if query else ''
+
+    def collect(path:Path,prefix:str,level:int)->tuple[list[str], bool]:
+        # Protected macOS folders are normal. Tree views silently skip anything
+        # the current user cannot inspect instead of flooding stderr.
+        kids=sorted(read_entries(path,hidden,quiet=True),key=lambda e:(not e.is_dir,e.name.lower()))
+        rendered=[]
+        any_match=False
         for i,e in enumerate(kids):
+            child_prefix=prefix+('   ' if i==len(kids)-1 else '│  ')
+            descendants=[]
+            descendant_match=False
+            if e.is_dir and level<depth:
+                descendants,descendant_match=collect(e.path,child_prefix,level+1)
+
+            self_match=not needle or needle in e.name.casefold()
+            include=self_match or descendant_match
+            if not include:
+                continue
+
             branch='└─' if i==len(kids)-1 else '├─'
             line=f'{prefix}{branch} {marker(e)} {e.name}{"/" if e.is_dir else ""}'
-            rows.append(color_for(e)+fit(line,width)+RESET)
-            if e.is_dir and level<depth:
-                walk(e.path,prefix+('   ' if i==len(kids)-1 else '│  '),level+1)
-    walk(target,'',1)
+            rendered.append(color_for(e)+fit(line,width)+RESET)
+            rendered.extend(descendants)
+            any_match=True
+        return rendered,any_match
+
+    rows,_=collect(target,'',1)
     return rows
 
 
@@ -177,7 +194,7 @@ def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, qu
     entries=read_entries(target,hidden)
     if query:
         needle=query.casefold()
-        entries=[e for e in entries if e.name.casefold().startswith(needle)]
+        entries=[e for e in entries if needle in e.name.casefold()]
     dirs=sorted((e for e in entries if e.is_dir),key=lambda e:e.name.lower())
     files=sorted((e for e in entries if not e.is_dir),key=lambda e:e.name.lower())
     if mode=='dirs': entries=dirs
@@ -213,21 +230,44 @@ def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, qu
 def read_key()->str:
     fd=sys.stdin.fileno(); old=termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        # cbreak gives us immediate keystrokes without changing terminal output
+        # processing. A short readiness check distinguishes bare Esc from an
+        # arrow/PageUp/PageDown escape sequence.
+        tty.setcbreak(fd)
         ch=os.read(fd,1)
         if ch==b'\x1b':
-            seq=ch+os.read(fd,2)
-            return seq.decode('latin1')
+            seq=bytearray(ch)
+            while len(seq)<6:
+                ready,_,_=select.select([fd],[],[],0.025)
+                if not ready:
+                    break
+                seq.extend(os.read(fd,1))
+                if seq[-1:] in b'~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz':
+                    break
+            return bytes(seq).decode('latin1')
         return ch.decode('utf-8','ignore')
     finally:
         termios.tcsetattr(fd,termios.TCSADRAIN,old)
 
 
-def matching_paths(target:Path, mode:str, hidden:bool, query:str='')->list[Path]:
+def matching_paths(target:Path, mode:str, hidden:bool, query:str='', tree_depth:int=2)->list[Path]:
+    needle=query.casefold() if query else ''
+
+    if mode=='tree':
+        matches=[]
+        def walk(path:Path,level:int)->None:
+            entries=sorted(read_entries(path,hidden,quiet=True),key=lambda e:(not e.is_dir,e.name.lower()))
+            for e in entries:
+                if not needle or needle in e.name.casefold():
+                    matches.append(e.path)
+                if e.is_dir and level<tree_depth:
+                    walk(e.path,level+1)
+        walk(target,1)
+        return matches
+
     entries=read_entries(target,hidden)
     if query:
-        needle=query.casefold()
-        entries=[e for e in entries if e.name.casefold().startswith(needle)]
+        entries=[e for e in entries if needle in e.name.casefold()]
     dirs=sorted((e for e in entries if e.is_dir),key=lambda e:e.name.lower())
     files=sorted((e for e in entries if not e.is_dir),key=lambda e:e.name.lower())
     if mode=='dirs': entries=dirs
@@ -238,13 +278,97 @@ def matching_paths(target:Path, mode:str, hidden:bool, query:str='')->list[Path]
     return [e.path for e in entries]
 
 
-def open_default(path:Path)->None:
+
+def preview_rows(path:Path, width:int, height:int)->list[str]:
+    """Small, dependency-light preview for selection mode."""
+    width=max(20,width)
+    height=max(3,height)
+    title=f'{BOLD}{CYAN}{path.name}{RESET}'
+    rows=[fit(title,width)]
+
     try:
-        if sys.platform=='darwin': subprocess.Popen(['open',str(path)])
-        elif os.name=='nt': os.startfile(str(path))  # type: ignore[attr-defined]
-        else: subprocess.Popen(['xdg-open',str(path)])
-    except (OSError,FileNotFoundError) as e:
-        print(f'look: cannot open {path}: {e}',file=sys.stderr)
+        st=path.stat()
+    except OSError as exc:
+        return rows+[fit(f'{DIM}{exc}{RESET}',width)]
+
+    if path.is_dir():
+        rows.append(f'{DIM}folder{RESET}')
+        try:
+            kids=sorted(path.iterdir(), key=lambda q:(not q.is_dir(),q.name.casefold()))
+            for child in kids[:max(1,height-2)]:
+                mark='◆' if child.is_dir() else '·'
+                rows.append(fit(f'{mark} {child.name}{"/" if child.is_dir() else ""}',width))
+            if len(kids)>height-2:
+                rows.append(f'{DIM}… {len(kids)-(height-2)} more{RESET}')
+        except OSError as exc:
+            rows.append(f'{DIM}{exc}{RESET}')
+        return rows[:height]
+
+    # Prefer actual text when the file looks textual. Avoid dumping binary bytes.
+    try:
+        sample=path.read_bytes()[:65536]
+    except OSError as exc:
+        return rows+[fit(f'{DIM}{exc}{RESET}',width)]
+
+    textual=(b'\x00' not in sample)
+    if textual:
+        try:
+            text=sample.decode('utf-8')
+        except UnicodeDecodeError:
+            try: text=sample.decode('latin1')
+            except Exception: text=''
+        if text:
+            rows.append(f'{DIM}{human_size(st.st_size)} · text{RESET}')
+            for line in text.expandtabs(4).splitlines():
+                rows.append(fit(line,width))
+                if len(rows)>=height: break
+            return rows[:height]
+
+    # For PDFs/images/other binaries, show useful type metadata without requiring
+    # a terminal-specific image protocol. pdftotext is used opportunistically.
+    suffix=path.suffix.casefold()
+    if suffix=='.pdf' and shutil.which('pdftotext'):
+        try:
+            proc=subprocess.run(['pdftotext','-f','1','-l','1',str(path),'-'],
+                                capture_output=True,text=True,timeout=2)
+            text=proc.stdout.strip()
+            if text:
+                rows.append(f'{DIM}{human_size(st.st_size)} · PDF · page 1 text{RESET}')
+                for line in text.splitlines():
+                    rows.append(fit(line,width))
+                    if len(rows)>=height: break
+                return rows[:height]
+        except (OSError,subprocess.SubprocessError):
+            pass
+
+    kind=suffix[1:].upper() if suffix else 'binary file'
+    if shutil.which('file'):
+        try:
+            proc=subprocess.run(['file','-b',str(path)],capture_output=True,text=True,timeout=1)
+            if proc.stdout.strip(): kind=proc.stdout.strip()
+        except (OSError,subprocess.SubprocessError):
+            pass
+    rows.append(f'{DIM}{human_size(st.st_size)}{RESET}')
+    for line in kind.splitlines(): rows.append(fit(line,width))
+    return rows[:height]
+
+def open_default(path:Path)->tuple[bool,str]:
+    """Ask the OS to open a file, returning a short user-facing failure."""
+    try:
+        if sys.platform=='darwin':
+            proc=subprocess.run(['open',str(path)],capture_output=True,text=True)
+            if proc.returncode:
+                ext=path.suffix or 'this file type'
+                return False, f'no application is registered to open {ext}'
+        elif os.name=='nt':
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        else:
+            proc=subprocess.run(['xdg-open',str(path)],capture_output=True,text=True)
+            if proc.returncode:
+                return False, f'no application could open {path.suffix or "this file type"}'
+        return True,''
+    except (OSError,FileNotFoundError):
+        return False,'system opener unavailable'
 
 
 def edit_path(path:Path)->None:
@@ -264,10 +388,10 @@ def copy_path(path:Path)->bool:
     except (OSError,subprocess.CalledProcessError): return False
 
 
-def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None)->None:
+def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,force_interactive=False)->None:
     # Interactive state machine: browse -> filter -> select.
     usable=max(3,height-2)
-    if len(rows)<=height-1 or not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if (len(rows)<=height-1 and not force_interactive) or not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('\n'.join(rows)); return
     top=0; query=''; filtering=False; selecting=False; selected=0
     current=rows
@@ -289,9 +413,30 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
         while True:
             page=current[top:top+usable]
             sys.stdout.write(CLEAR)
-            sys.stdout.write('\n'.join(fit(r,width) for r in page))
-            last=min(len(current),top+usable)
             picked=selected_path()
+            if selecting and picked:
+                if width>=96:
+                    left_w=max(38,int(width*0.58))
+                    right_w=max(28,width-left_w-3)
+                    left=[fit(r,left_w) for r in page]
+                    right=preview_rows(picked,right_w,usable)
+                    rendered=[]
+                    for i in range(max(len(left),len(right))):
+                        l=left[i] if i<len(left) else ''
+                        r=right[i] if i<len(right) else ''
+                        pad=max(0,left_w-len(strip_ansi(l)))
+                        rendered.append(l+' '*pad+' │ '+r)
+                    sys.stdout.write('\n'.join(rendered[:usable]))
+                else:
+                    preview_h=max(4,usable//3)
+                    list_h=max(3,usable-preview_h-1)
+                    rendered=[fit(r,width) for r in page[:list_h]]
+                    rendered.append(DIM+('─'*width)+RESET)
+                    rendered.extend(preview_rows(picked,width,preview_h))
+                    sys.stdout.write('\n'.join(rendered[:usable]))
+            else:
+                sys.stdout.write('\n'.join(fit(r,width) for r in page))
+            last=min(len(current),top+usable)
             if filtering:
                 status=f'{CYAN}  filter: {query}█{RESET}  {DIM}Enter select · Backspace edit · Esc clear{RESET}'
             elif selecting:
@@ -330,7 +475,11 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                 if key in {'\r','\n'}:
                     if picked.is_dir() and on_browse:
                         on_browse(picked); return
-                    open_default(picked); break
+                    opened,message=open_default(picked)
+                    if opened:
+                        break
+                    notice=message
+                    continue
                 if key=='e':
                     sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush(); edit_path(picked); return
                 if key=='y': notice='copied' if copy_path(picked) else 'clipboard unavailable'; continue
@@ -364,6 +513,7 @@ def main():
     target=Path(os.path.expanduser(args.path))
     hidden=not args.no_hidden
 
+    browsed_once=False
     while True:
         if not target.is_dir():
             print(f'look: not a directory: {target}',file=sys.stderr); return 1
@@ -375,9 +525,11 @@ def main():
             browsed=path
         pager(rows,sz.lines,sz.columns,
               rebuild=lambda q: build_view(target,args.mode,hidden,sz.columns,args.depth,q),
-              candidates=lambda q: matching_paths(target,args.mode,hidden,q),
-              on_browse=choose_dir)
+              candidates=lambda q: matching_paths(target,args.mode,hidden,q,args.depth),
+              on_browse=choose_dir,
+              force_interactive=browsed_once)
         if browsed is None: return 0
         target=browsed
+        browsed_once=True
 
 if __name__=='__main__': raise SystemExit(main())

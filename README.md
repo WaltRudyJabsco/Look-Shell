@@ -78,3 +78,53 @@ Restored the ASCII `LK` header in `lk help`. Paging behavior from 0.4.2 is uncha
 
 Packaging fix: the ZIP now preserves executable permissions for `install.sh`
 and `lk` on Unix systems, so `./install.sh` works immediately after extraction.
+
+## 0.5.0 — LOOK Ollama
+
+A surgical local-AI shortcut:
+
+```bash
+lo
+lk o
+lk ollama
+```
+
+If Ollama is reachable and a model is already loaded, LOOK opens a minimal
+terminal chat using that model. It does not start Ollama, load models, or
+manage them.
+
+
+## 0.5.1 — Ollama web search
+
+`lo` keeps normal local chat and exposes web search to tool-capable models when `OLLAMA_API_KEY` is available in the environment. `lo search` searches first on every turn, then answers from the current results. The key is inherited from the shell and is never stored by LOOK.
+
+
+## 0.6.0 — Ollama memory + capability checks
+
+`lk doctor` now reports optional Ollama state: binary, local server, loaded model, web-search key, and persistent memory. The installer creates LOOK's private memory state file but does not install Ollama automatically.
+
+`lo` now carries bounded persistent memory across sessions: five recent compressed exchanges plus one rolling long-term summary. When a sixth recent exchange is added, the oldest is folded into long memory and the recent window stays at five.
+
+Memory lives at `~/.local/share/look/ollama_memory.json` with mode `0600`.
+
+
+## 0.6.1
+
+Renderer fixes:
+
+- Tree mode silently skips protected/unreadable macOS folders instead of flooding the terminal with permission errors.
+- Bare `Esc` reliably exits/clears filter mode; arrow and paging escape sequences still work.
+- `lt` filtering now searches recursively through the same tree depth being displayed, so visible descendants can be found by typing their names.
+
+
+## 0.6.3
+
+- Filtering now matches substrings, not only filename prefixes.
+- Selection mode adds a responsive preview pane: right-side on wide terminals, bottom on narrow terminals. Text is previewed directly; directories show contents; PDFs use first-page text when `pdftotext` is available; other binaries show type/size metadata.
+- `l WORD` now means smart navigation: explicit directories are entered directly, otherwise Zoxide resolves a previously visited directory before LOOK renders it.
+
+## 0.6.4 — workspace-aware Ollama
+
+`lo` now receives the actual starting working directory and a bounded top-level directory snapshot as system context, so references such as “this folder” and “here” have a concrete meaning.
+
+Tool-capable local models also receive four intentionally small filesystem tools rooted to that starting directory: list folders/files (up to three levels), read bounded text files, search filenames and bounded text content, and create/write UTF-8 text files. Paths outside the starting workspace are rejected, binary reads are rejected, large reads/searches are bounded, existing files are protected unless replacement is explicitly requested, and arbitrary shell execution is not exposed.

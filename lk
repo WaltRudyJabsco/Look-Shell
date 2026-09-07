@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import os, platform, shutil, subprocess, sys, termios, tty
 from pathlib import Path
-VERSION="0.4.5"
+VERSION="0.6.4"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
+STATE_DIR=HOME/".local"/"share"/"look"
+MEMORY_FILE=STATE_DIR/"ollama_memory.json"
+RECENT_MEMORY_SLOTS=5
 
 def render(args):
     return subprocess.call([sys.executable,str(RENDERER),*args])
@@ -78,6 +81,7 @@ SYSTEM
   lk config            show installed paths
   lk secrets           secrets status (never contents)
   lk version           print version
+  lk o [search] [ASK]  Ollama chat / optional first prompt
   lk help              this glossary
 
 SHORTCUTS
@@ -87,6 +91,7 @@ SHORTCUTS
   lz       sizes             zll WORD jump + look
   cdl WORD jump + details    fznv     fuzzy edit
   f        fuzzy open        rs       reset ritual
+  lo       Ollama chat        lo ASK     ask immediately
 
 LONG LOOK VIEWS
   Enter      filter
@@ -103,23 +108,624 @@ LONG LOOK VIEWS
     return _page_text(body)
 
 def doctor():
+    import json
+    import urllib.request
+
     tools=["zsh","python3","git","zoxide","fzf","nvim","bat","fortune","cowsay"]
     checks=[(x,shutil.which(x) is not None) for x in tools]
     checks.append(("neofetch/fastfetch", bool(shutil.which("neofetch") or shutil.which("fastfetch"))))
     files=[("~/.zshrc",(HOME/".zshrc").exists()),
            ("~/.zsh_secrets",(HOME/".zsh_secrets").exists()),
            ("LOOK renderer",RENDERER.exists())]
+
+    base = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    ollama_bin = shutil.which("ollama") is not None
+    server = False
+    loaded = []
+    try:
+        with urllib.request.urlopen(base + "/api/ps", timeout=1.5) as response:
+            loaded = json.load(response).get("models", [])
+            server = True
+    except Exception:
+        pass
+
+    memory_ok = _ensure_memory_file()
+    web_key = bool(os.environ.get("OLLAMA_API_KEY"))
+
     print(f"LOOK {VERSION}\n"+"─"*46)
     print(f"\nSYSTEM\n  {platform.system()} {platform.release()} · {platform.machine()}")
     print("\nTOOLS")
     for n,ok in checks: print(f"  {'✓' if ok else '✗'} {n}")
     print("\nSHELL")
     for n,ok in files: print(f"  {'✓' if ok else '✗'} {n}")
-    good=all(ok for _,ok in checks+files)
+
+    print("\nOLLAMA · optional")
+    print(f"  {'✓' if ollama_bin else '·'} binary")
+    print(f"  {'✓' if server else '·'} server")
+    if server:
+        if loaded:
+            names = ", ".join((m.get("name") or m.get("model") or "?") for m in loaded)
+            print(f"  ✓ model loaded · {names}")
+        else:
+            print("  · no model loaded")
+    else:
+        print("  · model status unavailable")
+    print(f"  {'✓' if web_key else '·'} web search key")
+    print(f"  {'✓' if memory_ok else '✗'} persistent memory")
+
+    good=all(ok for _,ok in checks+files) and memory_ok
     print("\n"+("Everything looks good." if good else "LOOK found something worth checking."))
     return 0 if good else 1
 
+
+def _empty_memory():
+    return {"long": "", "recent": []}
+
+
+def _ensure_memory_file():
+    import json
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if not MEMORY_FILE.exists():
+            MEMORY_FILE.write_text(json.dumps(_empty_memory(), indent=2) + "\n")
+            os.chmod(MEMORY_FILE, 0o600)
+        return True
+    except OSError:
+        return False
+
+
+def _load_memory():
+    import json
+    if not _ensure_memory_file():
+        return _empty_memory()
+    try:
+        data=json.loads(MEMORY_FILE.read_text())
+        recent=data.get("recent", [])
+        return {
+            "long": str(data.get("long", ""))[:3000],
+            "recent": [str(x)[:900] for x in recent[-RECENT_MEMORY_SLOTS:]],
+        }
+    except Exception:
+        return _empty_memory()
+
+
+def _save_memory(memory):
+    import json
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp=MEMORY_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(memory, ensure_ascii=False, indent=2) + "\n")
+        os.chmod(tmp, 0o600)
+        tmp.replace(MEMORY_FILE)
+        os.chmod(MEMORY_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def _memory_context(memory):
+    parts=[]
+    if memory.get("long"):
+        parts.append("Long memory:\n" + memory["long"])
+    if memory.get("recent"):
+        recent="\n".join(f"{i+1}. {note}" for i,note in enumerate(memory["recent"]))
+        parts.append("Recent memory, oldest to newest:\n" + recent)
+    if not parts:
+        return ""
+    return (
+        "Persistent context from previous LOOK Ollama conversations follows. "
+        "Use it only when relevant; newer conversation content wins if there is a conflict.\n\n"
+        + "\n\n".join(parts)
+    )
+
+
+def _local_chat_once(base, model, messages):
+    import json
+    import urllib.request
+    payload=json.dumps({"model": model, "messages": messages, "stream": False}).encode()
+    request=urllib.request.Request(
+        base + "/api/chat", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(request) as response:
+        result=json.load(response)
+    return result.get("message", {}).get("content", "").strip()
+
+
+def _compress_exchange(base, model, user_text, assistant_text):
+    prompt = f'''Compress this conversation exchange into one durable memory note, maximum 90 words.
+Keep concrete preferences, decisions, project state, names, commands, or unresolved tasks that may matter later.
+Drop pleasantries and disposable details. Do not invent anything.
+
+USER:
+{user_text[:4000]}
+
+ASSISTANT:
+{assistant_text[:5000]}'''
+    try:
+        return _local_chat_once(base, model, [
+            {"role":"system","content":"You maintain concise persistent memory for a terminal assistant."},
+            {"role":"user","content":prompt},
+        ])[:900]
+    except Exception:
+        return ("User: " + user_text[:350] + " | Assistant: " + assistant_text[:450])[:900]
+
+
+def _fold_long_memory(base, model, old_long, evicted_note):
+    prompt = f'''Rewrite the long-term memory below so it incorporates the newly archived recent note.
+Maximum 260 words. Preserve durable facts, preferences, decisions, active project state, and unresolved tasks.
+Prefer newer information if it supersedes older information. Remove redundancy. Do not invent anything.
+
+CURRENT LONG MEMORY:
+{old_long or "(empty)"}
+
+NEW ARCHIVED NOTE:
+{evicted_note}'''
+    try:
+        return _local_chat_once(base, model, [
+            {"role":"system","content":"You maintain a compact rolling long-term memory."},
+            {"role":"user","content":prompt},
+        ])[:3000]
+    except Exception:
+        combined=(old_long + "\n" + evicted_note).strip()
+        return combined[-3000:]
+
+
+def _remember_exchange(base, model, memory, user_text, assistant_text):
+    note=_compress_exchange(base, model, user_text, assistant_text)
+    recent=list(memory.get("recent", []))
+    recent.append(note)
+    long_memory=memory.get("long", "")
+    if len(recent) > RECENT_MEMORY_SLOTS:
+        evicted=recent.pop(0)
+        long_memory=_fold_long_memory(base, model, long_memory, evicted)
+    updated={"long": long_memory, "recent": recent}
+    _save_memory(updated)
+    return updated
+
+
+
+def _safe_workspace_path(workspace, raw_path="."):
+    """Resolve a path while keeping Ollama file tools inside the starting cwd."""
+    workspace = Path(workspace).resolve()
+    raw_path = raw_path or "."
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = workspace / candidate
+    candidate = candidate.resolve()
+    try:
+        candidate.relative_to(workspace)
+    except ValueError:
+        raise ValueError("path is outside the LOOK Ollama workspace")
+    return candidate
+
+
+def _workspace_snapshot(workspace):
+    """Small guaranteed folder context; deeper inspection is handled by tools."""
+    workspace = Path(workspace).resolve()
+    try:
+        entries = sorted(workspace.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))[:120]
+    except OSError as exc:
+        return f"Current workspace: {workspace}\nDirectory listing unavailable: {exc}"
+    shown=[]
+    for item in entries:
+        try:
+            suffix="/" if item.is_dir() else ""
+        except OSError:
+            suffix=""
+        shown.append(item.name + suffix)
+    more="\n…listing truncated" if len(entries) == 120 else ""
+    return (
+        f"Current workspace: {workspace}\n"
+        "Treat this as the user's current folder. File tools are restricted to this folder and its descendants.\n"
+        "Top-level contents:\n" + ("\n".join(shown) if shown else "(empty)") + more
+    )
+
+
+def _tool_list_files(workspace, path=".", depth=1):
+    target=_safe_workspace_path(workspace, path)
+    if not target.exists():
+        return f"Not found: {path}"
+    if not target.is_dir():
+        return f"Not a directory: {path}"
+    depth=max(1, min(int(depth or 1), 3))
+    lines=[]
+    def walk(folder, level):
+        if level > depth or len(lines) >= 250:
+            return
+        try:
+            children=sorted(folder.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except (OSError, PermissionError):
+            return
+        for child in children:
+            if len(lines) >= 250:
+                return
+            rel=child.relative_to(workspace)
+            try:
+                is_dir=child.is_dir()
+            except OSError:
+                is_dir=False
+            lines.append(str(rel) + ("/" if is_dir else ""))
+            if is_dir:
+                walk(child, level+1)
+    walk(target, 1)
+    return "\n".join(lines) if lines else "(empty or unreadable)"
+
+
+def _tool_read_file(workspace, path):
+    target=_safe_workspace_path(workspace, path)
+    if not target.exists():
+        return f"Not found: {path}"
+    if not target.is_file():
+        return f"Not a file: {path}"
+    try:
+        if target.stat().st_size > 1_000_000:
+            return "File is larger than the 1 MB read limit."
+        data=target.read_bytes()
+        if b"\x00" in data[:4096]:
+            return "Binary file; text preview unavailable."
+        text=data.decode("utf-8", errors="replace")
+        return text[:16000] + ("\n…truncated" if len(text) > 16000 else "")
+    except OSError as exc:
+        return f"Read failed: {exc}"
+
+
+def _tool_search_files(workspace, query, path="."):
+    target=_safe_workspace_path(workspace, path)
+    if not target.exists() or not target.is_dir():
+        return f"Not a directory: {path}"
+    needle=(query or "").lower()
+    if not needle:
+        return "Search query is empty."
+    matches=[]
+    scanned=0
+    for root, dirs, files in os.walk(target):
+        rootp=Path(root)
+        try:
+            rel_depth=len(rootp.relative_to(target).parts)
+        except ValueError:
+            continue
+        dirs[:] = [d for d in dirs if not d.startswith('.') and rel_depth < 4]
+        for name in dirs + files:
+            rel=(rootp / name).relative_to(workspace)
+            if needle in name.lower():
+                matches.append(str(rel) + ("/" if name in dirs else ""))
+                if len(matches) >= 100:
+                    return "\n".join(matches)
+        for name in files:
+            if scanned >= 500 or len(matches) >= 100:
+                break
+            scanned += 1
+            filep=rootp / name
+            try:
+                if filep.stat().st_size > 300_000:
+                    continue
+                data=filep.read_bytes()
+                if b"\x00" in data[:4096]:
+                    continue
+                text=data.decode("utf-8", errors="ignore")
+            except OSError:
+                continue
+            if needle in text.lower():
+                rel=filep.relative_to(workspace)
+                if str(rel) not in matches:
+                    matches.append(str(rel))
+        if scanned >= 500 or len(matches) >= 100:
+            break
+    return "\n".join(matches) if matches else "No matches."
+
+
+def _tool_write_file(workspace, path, content, overwrite=False):
+    target=_safe_workspace_path(workspace, path)
+    if target.exists() and not overwrite:
+        return f"Refusing to overwrite existing file: {path}. Set overwrite=true only when the user explicitly asked to replace it."
+    if not target.parent.exists() or not target.parent.is_dir():
+        return f"Parent directory does not exist: {target.parent.relative_to(Path(workspace).resolve())}"
+    try:
+        target.write_text(content, encoding="utf-8")
+        return f"Wrote {len(content.encode('utf-8'))} bytes to {target.relative_to(Path(workspace).resolve())}"
+    except OSError as exc:
+        return f"Write failed: {exc}"
+
+
+def _filesystem_tools():
+    return [
+        {"type":"function","function":{
+            "name":"list_files",
+            "description":"List files and folders inside the current LOOK workspace. Use this to inspect folder contents or hierarchy.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string","description":"Workspace-relative directory, default ."},
+                "depth":{"type":"integer","description":"Recursive depth 1-3, default 1"}
+            }}
+        }},
+        {"type":"function","function":{
+            "name":"read_file",
+            "description":"Read a text file inside the current LOOK workspace. Reads are bounded and binary files are rejected.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string"}
+            },"required":["path"]}
+        }},
+        {"type":"function","function":{
+            "name":"search_files",
+            "description":"Search filenames and bounded text content recursively inside the current LOOK workspace.",
+            "parameters":{"type":"object","properties":{
+                "query":{"type":"string"},
+                "path":{"type":"string","description":"Workspace-relative directory, default ."}
+            },"required":["query"]}
+        }},
+        {"type":"function","function":{
+            "name":"write_file",
+            "description":"Create a UTF-8 text file inside the current LOOK workspace. Use only when the user explicitly asks to create or write a file. Existing files are protected unless overwrite=true and replacement was explicitly requested.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string"},
+                "content":{"type":"string"},
+                "overwrite":{"type":"boolean"}
+            },"required":["path","content"]}
+        }}
+    ]
+
+
+def _run_filesystem_tool(workspace, name, args):
+    try:
+        if name == "list_files":
+            return _tool_list_files(workspace, args.get("path", "."), args.get("depth", 1))
+        if name == "read_file":
+            return _tool_read_file(workspace, args.get("path", ""))
+        if name == "search_files":
+            return _tool_search_files(workspace, args.get("query", ""), args.get("path", "."))
+        if name == "write_file":
+            return _tool_write_file(workspace, args.get("path", ""), args.get("content", ""), bool(args.get("overwrite", False)))
+    except (OSError, ValueError) as exc:
+        return f"File tool failed: {exc}"
+    return f"Unknown file tool: {name}"
+
+def _ollama_web_search(query):
+    """Search via Ollama's hosted web API using the inherited API key."""
+    import json
+    import urllib.request
+
+    key = os.environ.get("OLLAMA_API_KEY")
+    if not key:
+        raise RuntimeError("OLLAMA_API_KEY is not set")
+
+    payload = json.dumps({"query": query}).encode()
+    request = urllib.request.Request(
+        "https://ollama.com/api/web_search",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return json.load(response)
+
+
+def _search_text(result):
+    """Keep search context useful without flooding a local model's context."""
+    import json
+
+    results = result.get("results", [])[:5]
+    compact = [
+        {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "content": item.get("content", "")[:1800],
+        }
+        for item in results
+    ]
+    return json.dumps(compact, ensure_ascii=False)
+
+
+def _ollama_markup(text):
+    """Render a deliberately small Markdown subset with portable ANSI styling."""
+    import re
+    if not sys.stdout.isatty():
+        return text
+
+    reset="\033[0m"; bold="\033[1m"; cyan="\033[38;5;81m"; green="\033[38;5;114m"; dim="\033[2m"
+    out=[]
+    in_code=False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            in_code=not in_code
+            continue
+        if in_code:
+            out.append(green + line + reset)
+            continue
+        if line.startswith("### "):
+            line=bold+cyan+line[4:]+reset
+        elif line.startswith("## "):
+            line=bold+cyan+line[3:]+reset
+        elif line.startswith("# "):
+            line=bold+cyan+line[2:]+reset
+        else:
+            line=re.sub(r'\*\*(.+?)\*\*', lambda m: bold+m.group(1)+reset, line)
+            line=re.sub(r'`([^`]+)`', lambda m: green+m.group(1)+reset, line)
+            if line.startswith(('- ', '* ')):
+                line=cyan+'•'+reset+' '+line[2:]
+        out.append(line)
+    return "\n".join(out)
+
+
+def ollama_chat(force_search=False, initial_prompt=None):
+    """Minimal local chat; optional first prompt and web-search mode."""
+    import json
+    import urllib.request
+
+    base = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+
+    try:
+        with urllib.request.urlopen(base + "/api/ps", timeout=2) as response:
+            running = json.load(response).get("models", [])
+    except Exception:
+        print("LOOK OLLAMA · server unavailable")
+        return 1
+
+    if not running:
+        print("LOOK OLLAMA · no model loaded")
+        return 1
+
+    model = running[0].get("name") or running[0].get("model")
+    if not model:
+        print("LOOK OLLAMA · no model loaded")
+        return 1
+
+    has_web = bool(os.environ.get("OLLAMA_API_KEY"))
+    mode = "LOOK OLLAMA SEARCH" if force_search else "LOOK OLLAMA"
+    web_state = "required" if force_search else ("available" if has_web else "off")
+    print(f"{mode} · {model} · {Path.cwd()}")
+    print(f"web · {web_state} · Ctrl-D to exit\n")
+
+    web_tool = {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for current or externally verifiable information. Use this when the answer depends on recent events, news, current facts, or information you are uncertain about.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The web search query"}
+                },
+                "required": ["query"],
+            },
+        },
+    }
+
+    workspace = Path.cwd().resolve()
+    memory = _load_memory()
+    messages = [
+        {"role": "system", "content": _workspace_snapshot(workspace)},
+        {"role": "system", "content": (
+            "You are LOOK Ollama, running inside the user's terminal. "
+            "When the user refers to 'this folder', 'here', local files, or the current project, "
+            "use the workspace context and file tools instead of guessing. "
+            "Do not claim to have read a file unless a file tool supplied its contents. "
+            "Only write files when the user explicitly asks you to create or change one."
+        )},
+    ]
+    memory_context = _memory_context(memory)
+    if memory_context:
+        messages.append({"role": "system", "content": memory_context})
+
+    pending_prompt = (initial_prompt or "").strip()
+    while True:
+        if pending_prompt:
+            prompt=pending_prompt
+            pending_prompt=""
+            print(f"you › {prompt}")
+        else:
+            try:
+                prompt = input("you › ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 0
+
+        if not prompt:
+            continue
+
+        messages.append({"role": "user", "content": prompt})
+
+        # Search mode is deliberately deterministic: search first, then answer.
+        if force_search:
+            if not has_web:
+                print("search › OLLAMA_API_KEY is not set\n")
+                messages.pop()
+                continue
+            try:
+                print(f"search › {prompt}")
+                result = _ollama_web_search(prompt)
+                messages.append({
+                    "role": "system",
+                    "content": "Current web search results for the user's latest question:\n" + _search_text(result) +
+                               "\nUse these results when answering. Mention source URLs when useful.",
+                })
+            except Exception as exc:
+                print(f"search › {exc}\n")
+                messages.pop()
+                continue
+
+        # Normal mode exposes search as a tool. Tool-capable models decide when to use it.
+        for _ in range(4):
+            payload_obj = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+            }
+            tools = _filesystem_tools()
+            if has_web and not force_search:
+                tools.append(web_tool)
+            payload_obj["tools"] = tools
+
+            payload = json.dumps(payload_obj).encode()
+            request = urllib.request.Request(
+                base + "/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            try:
+                with urllib.request.urlopen(request) as response:
+                    result = json.load(response)
+            except Exception as exc:
+                print(f"LOOK OLLAMA · {exc}")
+                messages.pop()
+                break
+
+            message = result.get("message", {})
+            tool_calls = message.get("tool_calls") or []
+            if tool_calls:
+                messages.append(message)
+                for call in tool_calls:
+                    function = call.get("function", {})
+                    name = function.get("name", "")
+                    args = function.get("arguments", {}) or {}
+                    if isinstance(args, str):
+                        try:
+                            args=json.loads(args)
+                        except Exception:
+                            args={}
+
+                    if name == "web_search":
+                        if not has_web or force_search:
+                            tool_content = "Web search is unavailable in this session."
+                        else:
+                            query = args.get("query", prompt)
+                            try:
+                                print(f"search › {query}")
+                                search_result = _ollama_web_search(query)
+                                tool_content = _search_text(search_result)
+                            except Exception as exc:
+                                tool_content = f"Web search failed: {exc}"
+                    elif name in {"list_files", "read_file", "search_files", "write_file"}:
+                        tool_content = _run_filesystem_tool(workspace, name, args)
+                        if name == "write_file":
+                            print(f"file › {tool_content}")
+                    else:
+                        tool_content = f"Unknown tool: {name}"
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_name": name,
+                        "content": tool_content,
+                    })
+                continue
+
+            answer = message.get("content", "").strip()
+            messages.append({"role": "assistant", "content": answer})
+            print("\n" + _ollama_markup(answer) + "\n")
+            memory = _remember_exchange(base, model, memory, prompt, answer)
+            break
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] in {"o", "ollama"}:
+        args=sys.argv[2:]
+        force_search=bool(args and args[0] == "search")
+        if force_search:
+            args=args[1:]
+        initial_prompt=" ".join(args).strip() or None
+        return ollama_chat(force_search=force_search, initial_prompt=initial_prompt)
     a=sys.argv[1:]
     if not a: return render([])
     cmd=a[0]; rest=a[1:]
@@ -128,7 +734,7 @@ def main():
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
     if cmd=="doctor": return doctor()
     if cmd=="config":
-        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}")
+        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}")
         return 0
     if cmd=="secrets":
         p=HOME/".zsh_secrets"

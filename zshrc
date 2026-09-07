@@ -96,7 +96,28 @@ _look() {
 unalias ls l ll ld lf lt lr lz lsd lsf lc 2>/dev/null
 
 # Human-facing filesystem vocabulary.
-l()   { _look "${1:-.}" --mode smart; }
+l() {
+  if (( $# == 0 )); then
+    _look . --mode smart
+    return
+  fi
+
+  # `l WORD` means navigate there, then LOOK. Explicit directories win;
+  # otherwise let zoxide resolve previously visited shorthand.
+  if (( $# == 1 )) && [[ -d "$1" ]]; then
+    builtin cd -- "$1" || return
+    _look . --mode smart
+    return
+  fi
+
+  local target
+  target="$(zoxide query -- "$@" 2>/dev/null)" || {
+    print -P "%F{red}LOOK:%f no directory match for $*"
+    return 1
+  }
+  builtin cd -- "$target" || return
+  _look . --mode smart
+}
 ll()  { _look "${1:-.}" --mode detail; }
 ld()  { _look "${1:-.}" --mode dirs; }
 lf()  { _look "${1:-.}" --mode files; }
@@ -182,3 +203,6 @@ flightProgress() {
 
 # LOOK unified command
 commands() { "$HOME/.local/bin/lk" help; }
+
+# LOOK Ollama — minimal chat with the currently loaded model.
+alias lo='lk o'
