@@ -32,7 +32,7 @@ The fast vocabulary remains: `l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`, `zll`, `cd
 
 ## Interactive LOOK
 
-In a long listing, press `Enter` (or `/`) to begin filtering. Type a filename prefix; `Backspace` edits it. Press `Enter` again to accept the filter and enter selection mode.
+In a long listing, press `Enter` (or `/`) to begin filtering. Type any substring; separate words with spaces to require every term (for example, `cache safari`). `Backspace` edits it. Press `Enter` again to accept the filter and enter selection mode. While filtering, `Up`/`Down` scroll one row and `PageUp`/`PageDown` scroll a page without leaving the live filter.
 
 ```text
 j / k       choose among matching items
@@ -123,7 +123,11 @@ Renderer fixes:
 - Selection mode adds a responsive preview pane: right-side on wide terminals, bottom on narrow terminals. Text is previewed directly; directories show contents; PDFs use first-page text when `pdftotext` is available; other binaries show type/size metadata.
 - `l WORD` now means smart navigation: explicit directories are entered directly, otherwise Zoxide resolves a previously visited directory before LOOK renders it.
 
-## 0.6.5 — macOS installer compatibility
+## 0.6.11 — filter polish
+
+Rapid filter typing is lightly debounced to avoid expensive redraws on every character. In live filter mode, `E` edits the highlighted file while lowercase letters remain available for searching.
+
+## 0.6.8 — live filter selection
 
 `lo` now receives the actual starting working directory and a bounded top-level directory snapshot as system context, so references such as “this folder” and “here” have a concrete meaning.
 

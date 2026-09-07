@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-RESET='\x1b[0m'; BOLD='\x1b[1m'; DIM='\x1b[2m'
+RESET='\x1b[0m'; BOLD='\x1b[1m'; DIM='\x1b[2m'; REVERSE='\x1b[7m'
 BLUE='\x1b[38;5;75m'; CYAN='\x1b[38;5;81m'; GREEN='\x1b[38;5;114m'; YELLOW='\x1b[38;5;221m'; MAGENTA='\x1b[38;5;176m'; RED='\x1b[38;5;203m'; WHITE='\x1b[38;5;252m'; GRAY='\x1b[38;5;244m'
 CLEAR='\x1b[2J\x1b[H'; HIDE='\x1b[?25l'; SHOW='\x1b[?25h'
 
@@ -121,7 +121,7 @@ def fit(s:str,width:int)->str:
     return raw[:keep]+'…'
 
 
-def column_grid(entries:list[Entry], width:int)->list[str]:
+def column_grid(entries:list[Entry], width:int, highlight_path:Path|None=None)->list[str]:
     if not entries: return []
     labels=[]
     for e in entries:
@@ -138,7 +138,8 @@ def column_grid(entries:list[Entry], width:int)->list[str]:
             if len(plain)>cellw-2:
                 plain=plain[:max(1,cellw-3)]+'…'
             padding=' ' * max(1,cellw-len(plain))
-            pieces.append(color_for(e)+plain+RESET+padding)
+            style=REVERSE if highlight_path is not None and e.path==highlight_path else color_for(e)
+            pieces.append(style+plain+RESET+padding)
         rows.append(''.join(pieces).rstrip())
     return rows
 
@@ -157,9 +158,15 @@ def detail_rows(entries:list[Entry], width:int)->list[str]:
     return rows
 
 
-def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='')->list[str]:
+def query_matches(name:str, query:str)->bool:
+    """AND-match whitespace-separated terms anywhere in a name."""
+    terms=query.casefold().split()
+    folded=name.casefold()
+    return all(term in folded for term in terms)
+
+
+def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='', highlight_path:Path|None=None)->list[str]:
     rows=[]
-    needle=query.casefold() if query else ''
 
     def collect(path:Path,prefix:str,level:int)->tuple[list[str], bool]:
         # Protected macOS folders are normal. Tree views silently skip anything
@@ -174,14 +181,15 @@ def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='')->lis
             if e.is_dir and level<depth:
                 descendants,descendant_match=collect(e.path,child_prefix,level+1)
 
-            self_match=not needle or needle in e.name.casefold()
+            self_match=not query or query_matches(e.name,query)
             include=self_match or descendant_match
             if not include:
                 continue
 
             branch='└─' if i==len(kids)-1 else '├─'
             line=f'{prefix}{branch} {marker(e)} {e.name}{"/" if e.is_dir else ""}'
-            rendered.append(color_for(e)+fit(line,width)+RESET)
+            style=REVERSE if highlight_path is not None and e.path==highlight_path else color_for(e)
+            rendered.append(style+fit(line,width)+RESET)
             rendered.extend(descendants)
             any_match=True
         return rendered,any_match
@@ -190,13 +198,22 @@ def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='')->lis
     return rows
 
 
-def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, query:str='')->list[str]:
+def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, query:str='', highlight_path:Path|None=None)->list[str]:
     entries=read_entries(target,hidden)
     if query:
-        needle=query.casefold()
-        entries=[e for e in entries if needle in e.name.casefold()]
+        entries=[e for e in entries if query_matches(e.name,query)]
     dirs=sorted((e for e in entries if e.is_dir),key=lambda e:e.name.lower())
     files=sorted((e for e in entries if not e.is_dir),key=lambda e:e.name.lower())
+
+    # A filtered tree searches recursively. Its header should count the same
+    # actual matches the user can select, not only matching top-level entries.
+    if mode=='tree' and query:
+        tree_matches=matching_paths(target,'tree',hidden,query,tree_depth)
+        tree_dir_count=sum(1 for path in tree_matches if path.is_dir())
+        tree_file_count=len(tree_matches)-tree_dir_count
+    else:
+        tree_dir_count=len(dirs)
+        tree_file_count=len(files)
     if mode=='dirs': entries=dirs
     elif mode=='files': entries=files
     elif mode=='recent': entries=sorted(entries,key=lambda e:e.mtime,reverse=True)
@@ -206,34 +223,38 @@ def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, qu
     try: display=str(target.resolve().relative_to(Path.home()))
     except ValueError: display=str(target.resolve())
     if not display.startswith('/'): display='~/'+display if display!='.' else '~'
-    header=f'{BOLD}{CYAN}LOOK{RESET} {DIM}{display}{RESET}  {GRAY}· {len(dirs)} dirs · {len(files)} files{RESET}'
+    header=f'{BOLD}{CYAN}LOOK{RESET} {DIM}{display}{RESET}  {GRAY}· {tree_dir_count} dirs · {tree_file_count} files{RESET}'
     rule=DIM+('─'*min(width, max(20,len(strip_ansi(header)))))+RESET
     rows=[header,rule]
     if mode=='tree':
-        rows+=tree_rows(target,tree_depth,width,hidden,query)
+        rows+=tree_rows(target,tree_depth,width,hidden,query,highlight_path)
     elif mode in {'detail','recent','size'}:
         rows+=detail_rows(entries,width)
     else:
         # Smart mode: small sets get labeled sections; larger sets become one compact grouped grid.
         if mode=='smart' and len(entries)<=18:
             if dirs:
-                rows += [f'{DIM}folders{RESET}'] + column_grid(dirs,width)
+                rows += [f'{DIM}folders{RESET}'] + column_grid(dirs,width,highlight_path)
             if dirs and files: rows.append('')
             if files:
-                rows += [f'{DIM}files{RESET}'] + column_grid(files,width)
+                rows += [f'{DIM}files{RESET}'] + column_grid(files,width,highlight_path)
         else:
-            rows += column_grid(entries,width)
+            rows += column_grid(entries,width,highlight_path)
     if len(rows)==2: rows.append(DIM+'(empty)'+RESET)
     return rows
 
 
-def read_key()->str:
+def read_key(timeout:float|None=None)->str:
     fd=sys.stdin.fileno(); old=termios.tcgetattr(fd)
     try:
         # cbreak gives us immediate keystrokes without changing terminal output
         # processing. A short readiness check distinguishes bare Esc from an
         # arrow/PageUp/PageDown escape sequence.
         tty.setcbreak(fd)
+        if timeout is not None:
+            ready,_,_=select.select([fd],[],[],timeout)
+            if not ready:
+                return ''
         ch=os.read(fd,1)
         if ch==b'\x1b':
             seq=bytearray(ch)
@@ -251,14 +272,13 @@ def read_key()->str:
 
 
 def matching_paths(target:Path, mode:str, hidden:bool, query:str='', tree_depth:int=2)->list[Path]:
-    needle=query.casefold() if query else ''
 
     if mode=='tree':
         matches=[]
         def walk(path:Path,level:int)->None:
             entries=sorted(read_entries(path,hidden,quiet=True),key=lambda e:(not e.is_dir,e.name.lower()))
             for e in entries:
-                if not needle or needle in e.name.casefold():
+                if not query or query_matches(e.name,query):
                     matches.append(e.path)
                 if e.is_dir and level<tree_depth:
                     walk(e.path,level+1)
@@ -267,7 +287,7 @@ def matching_paths(target:Path, mode:str, hidden:bool, query:str='', tree_depth:
 
     entries=read_entries(target,hidden)
     if query:
-        entries=[e for e in entries if needle in e.name.casefold()]
+        entries=[e for e in entries if query_matches(e.name,query)]
     dirs=sorted((e for e in entries if e.is_dir),key=lambda e:e.name.lower())
     files=sorted((e for e in entries if not e.is_dir),key=lambda e:e.name.lower())
     if mode=='dirs': entries=dirs
@@ -397,6 +417,7 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
     current=rows
     matches:list[Path]=[]
     notice=''
+    pending=''
 
     def refresh_filter()->None:
         nonlocal current,top,matches,selected
@@ -411,10 +432,16 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
     try:
         sys.stdout.write(HIDE)
         while True:
+            picked=selected_path()
+            if filtering and rebuild:
+                # Side previews consume terminal width. Reflow the grid to the
+                # visible list pane so highlighted matches cannot live beneath
+                # the preview in an off-screen column.
+                render_width=max(38,int(width*0.58)) if picked and width>=96 else width
+                current=rebuild(query, picked, render_width)
             page=current[top:top+usable]
             sys.stdout.write(CLEAR)
-            picked=selected_path()
-            if selecting and picked:
+            if (selecting or filtering) and picked:
                 if width>=96:
                     left_w=max(38,int(width*0.58))
                     right_w=max(28,width-left_w-3)
@@ -438,7 +465,9 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                 sys.stdout.write('\n'.join(fit(r,width) for r in page))
             last=min(len(current),top+usable)
             if filtering:
-                status=f'{CYAN}  filter: {query}█{RESET}  {DIM}Enter select · Backspace edit · Esc clear{RESET}'
+                match_word='match' if len(matches)==1 else 'matches'
+                status=(f'{CYAN}  filter: {query}█{RESET}  {GRAY}{len(matches)} {match_word}{RESET}  '
+                        f'{DIM}↑/↓ choose · pgup/pgdn page · Enter open · E edit · Backspace delete · Esc clear{RESET}')
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
@@ -452,17 +481,66 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                 status=f'{status}  {YELLOW}{notice}{RESET}'
                 notice=''
             sys.stdout.write('\n'+fit(status,width)); sys.stdout.flush()
-            key=read_key()
+            if pending:
+                key,pending=pending,''
+            else:
+                key=read_key()
 
             if filtering:
                 if key in {'\r','\n'}:
-                    filtering=False; selecting=True; refresh_filter()
-                elif key=='\x1b' or key.startswith('\x1b['):
+                    picked=selected_path()
+                    if picked:
+                        if picked.is_dir() and on_browse:
+                            on_browse(picked); return
+                        opened,message=open_default(picked)
+                        if opened:
+                            break
+                        notice=message
+                    continue
+                elif key in {'\x1b[B'} and matches:
+                    selected=min(len(matches)-1,selected+1)
+                    top=min(max(0,len(current)-usable),top+1)
+                elif key in {'\x1b[A'} and matches:
+                    selected=max(0,selected-1)
+                    top=max(0,top-1)
+                elif key=='\x1b[6~' and matches:
+                    selected=min(len(matches)-1,selected+usable)
+                    top=min(max(0,len(current)-usable),top+usable)
+                elif key=='\x1b[5~' and matches:
+                    selected=max(0,selected-usable)
+                    top=max(0,top-usable)
+                elif key=='\x1b':
                     query=''; filtering=False; selecting=False; refresh_filter()
+                elif key.startswith('\x1b['):
+                    # Ignore other terminal escape sequences without leaving filter mode.
+                    pass
+                elif key=='E' and matches:
+                    picked=selected_path()
+                    if picked and not picked.is_dir():
+                        sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush(); edit_path(picked); return
+                    notice='folders are browsed with Enter'
                 elif key in {'\x7f','\b'}:
                     if query: query=query[:-1]; refresh_filter()
                 elif key=='\x03': break
-                elif len(key)==1 and key.isprintable(): query+=key; refresh_filter()
+                elif len(key)==1 and key.isprintable():
+                    # Debounce rapid typing: collect a short burst before rebuilding.
+                    # LOOK still feels live, but large recursive filters no longer
+                    # redraw once per character while the user is mid-word.
+                    query+=key
+                    while True:
+                        nxt=read_key(0.055)
+                        if not nxt:
+                            break
+                        if nxt in {'\x7f','\b'}:
+                            if query: query=query[:-1]
+                            continue
+                        if len(nxt)==1 and nxt.isprintable():
+                            query+=nxt
+                            continue
+                        # Preserve a non-text key for the next input cycle.
+                        pending=nxt
+                        break
+                    refresh_filter()
                 continue
 
             if selecting:
@@ -508,6 +586,7 @@ def main():
     ap.add_argument('--mode',choices=['smart','detail','dirs','files','tree','recent','size'],default='smart')
     ap.add_argument('--depth',type=int,default=2)
     ap.add_argument('--no-hidden',action='store_true')
+    ap.add_argument('--interactive',action='store_true')
     ap.add_argument('-h','--help',action='help')
     args=ap.parse_args()
     target=Path(os.path.expanduser(args.path))
@@ -524,10 +603,10 @@ def main():
             nonlocal browsed
             browsed=path
         pager(rows,sz.lines,sz.columns,
-              rebuild=lambda q: build_view(target,args.mode,hidden,sz.columns,args.depth,q),
+              rebuild=lambda q,h=None,w=None: build_view(target,args.mode,hidden,w or sz.columns,args.depth,q,h),
               candidates=lambda q: matching_paths(target,args.mode,hidden,q,args.depth),
               on_browse=choose_dir,
-              force_interactive=browsed_once)
+              force_interactive=(args.interactive or browsed_once))
         if browsed is None: return 0
         target=browsed
         browsed_once=True

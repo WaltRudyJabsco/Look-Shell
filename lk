@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os, platform, shutil, subprocess, sys, termios, tty
 from pathlib import Path
-VERSION="0.6.5"
+VERSION="0.6.11"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"

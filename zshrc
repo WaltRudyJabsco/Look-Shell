@@ -98,7 +98,7 @@ unalias ls l ll ld lf lt lr lz lsd lsf lc 2>/dev/null
 # Human-facing filesystem vocabulary.
 l() {
   if (( $# == 0 )); then
-    _look . --mode smart
+    _look . --mode smart --interactive
     return
   fi
 
@@ -106,7 +106,7 @@ l() {
   # otherwise let zoxide resolve previously visited shorthand.
   if (( $# == 1 )) && [[ -d "$1" ]]; then
     builtin cd -- "$1" || return
-    _look . --mode smart
+    _look . --mode smart --interactive
     return
   fi
 
@@ -116,14 +116,14 @@ l() {
     return 1
   }
   builtin cd -- "$target" || return
-  _look . --mode smart
+  _look . --mode smart --interactive
 }
-ll()  { _look "${1:-.}" --mode detail; }
-ld()  { _look "${1:-.}" --mode dirs; }
-lf()  { _look "${1:-.}" --mode files; }
-lt()  { _look "${1:-.}" --mode tree --depth 3; }
-lr()  { _look "${1:-.}" --mode recent; }
-lz()  { _look "${1:-.}" --mode size; }
+ll()  { _look "${1:-.}" --mode detail --interactive; }
+ld()  { _look "${1:-.}" --mode dirs --interactive; }
+lf()  { _look "${1:-.}" --mode files --interactive; }
+lt()  { _look "${1:-.}" --mode tree --depth 3 --interactive; }
+lr()  { _look "${1:-.}" --mode recent --interactive; }
+lz()  { _look "${1:-.}" --mode size --interactive; }
 
 # Keep your old names too: muscle memory is an API.
 lsd() { ld "$@"; }
