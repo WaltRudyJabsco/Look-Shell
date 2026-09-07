@@ -2,6 +2,10 @@
 
 A portable personal shell environment for macOS and Linux. LOOK combines a responsive filesystem renderer, zoxide navigation, fuzzy finding, Neovim integration, diagnostics, and a small interactive file navigator.
 
+![LOOK Shell help](screenshots/LOOK_Shell_doctor.png)
+
+![LOOK Shell help](screenshots/LOOK_Shell_help.png)
+
 ## Install
 
 ```sh
