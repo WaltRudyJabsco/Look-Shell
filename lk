@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-import os, platform, shutil, subprocess, sys, termios, tty
+import os, platform, shutil, subprocess, sys, termios, tty, threading, time
+from contextlib import contextmanager
 from pathlib import Path
-VERSION="1.0.0"
+VERSION="1.0.1"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -230,6 +231,37 @@ def _local_chat_once(base, model, messages):
         result=json.load(response)
     return result.get("message", {}).get("content", "").strip()
 
+
+
+@contextmanager
+def _activity(label):
+    """Show a small animated status while a synchronous Ollama step is busy."""
+    interactive = sys.stdout.isatty()
+    if not interactive:
+        print(f"· {label}", flush=True)
+        yield
+        return
+
+    stop = threading.Event()
+    frames = ("·", "··", "···")
+
+    def animate():
+        i = 0
+        while not stop.is_set():
+            sys.stdout.write(f"\r\033[2K\033[2m{frames[i % len(frames)]} {label}\033[0m")
+            sys.stdout.flush()
+            i += 1
+            stop.wait(0.35)
+
+    worker = threading.Thread(target=animate, daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        worker.join(timeout=0.5)
+        sys.stdout.write("\r\033[2K")
+        sys.stdout.flush()
 
 def _compress_exchange(base, model, user_text, assistant_text):
     prompt = f'''Compress this conversation exchange into one durable memory note, maximum 90 words.
@@ -634,7 +666,8 @@ def ollama_chat(force_search=False, initial_prompt=None):
                 continue
             try:
                 print(f"search › {prompt}")
-                result = _ollama_web_search(prompt)
+                with _activity("searching"):
+                    result = _ollama_web_search(prompt)
                 messages.append({
                     "role": "system",
                     "content": "Current web search results for the user's latest question:\n" + _search_text(result) +
@@ -666,8 +699,9 @@ def ollama_chat(force_search=False, initial_prompt=None):
             )
 
             try:
-                with urllib.request.urlopen(request) as response:
-                    result = json.load(response)
+                with _activity("thinking"):
+                    with urllib.request.urlopen(request) as response:
+                        result = json.load(response)
             except Exception as exc:
                 print(f"LOOK OLLAMA · {exc}")
                 messages.pop()
@@ -694,7 +728,8 @@ def ollama_chat(force_search=False, initial_prompt=None):
                             query = args.get("query", prompt)
                             try:
                                 print(f"search › {query}")
-                                search_result = _ollama_web_search(query)
+                                with _activity("searching"):
+                                    search_result = _ollama_web_search(query)
                                 tool_content = _search_text(search_result)
                             except Exception as exc:
                                 tool_content = f"Web search failed: {exc}"
@@ -715,7 +750,8 @@ def ollama_chat(force_search=False, initial_prompt=None):
             answer = message.get("content", "").strip()
             messages.append({"role": "assistant", "content": answer})
             print("\n" + _ollama_markup(answer) + "\n")
-            memory = _remember_exchange(base, model, memory, prompt, answer)
+            with _activity("remembering"):
+                memory = _remember_exchange(base, model, memory, prompt, answer)
             break
 
 def main():

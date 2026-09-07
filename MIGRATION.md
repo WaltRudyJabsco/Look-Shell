@@ -1,9 +1,9 @@
-# LOOK 1.0.0
+# LOOK 1.0.1
 
-Stable release pass.
+Ollama activity-state polish only.
 
-- Live filter actions now include `E` edit, `O` open with another application, `Y` copy absolute path, and `P` print absolute path and exit.
-- Capital action keys keep lowercase letters available for filter text.
-- `O` uses an installed application chooser and does not change the system default association.
-- Existing explicit selection mode accepts both uppercase and lowercase action aliases.
-- No Ollama, memory, installer, navigation, or renderer-layout behavior was otherwise changed.
+- Shows animated `searching` while hosted web search is running.
+- Shows animated `thinking` while the local model owns the terminal.
+- Shows animated `remembering` while persistent memory is compressed/folded after an answer.
+- Ctrl-D / Ctrl-C continue to exit cleanly at the next input prompt.
+- No changes to model selection, memory semantics, filesystem tools, renderer behavior, installer behavior, or shortcut routing.

@@ -138,6 +138,11 @@ Rapid filter typing is lightly debounced to avoid expensive redraws on every cha
 Tool-capable local models also receive four intentionally small filesystem tools rooted to that starting directory: list folders/files (up to three levels), read bounded text files, search filenames and bounded text content, and create/write UTF-8 text files. Paths outside the starting workspace are rejected, binary reads are rejected, large reads/searches are bounded, existing files are protected unless replacement is explicitly requested, and arbitrary shell execution is not exposed.
 
 
+
+## 1.0.1 — Ollama activity polish
+
+LOOK Ollama now shows lightweight animated `searching`, `thinking`, and `remembering` states during synchronous work, so the terminal no longer appears hung after an answer or while web search/model calls are running. Ctrl-D and Ctrl-C remain safe exit signals at the next input prompt; model, memory, search, and filesystem behavior are otherwise unchanged.
+
 ## 1.0.0 — stable LOOK
 
 LOOK 1.0.0 marks the stable filesystem/navigation interface. Live filtering now exposes the complete non-destructive action set without colliding with search text: `E` edit, `O` open with another application, `Y` copy absolute path, and `P` print absolute path and exit. The existing default-open, preview, recursive filtering, navigation, Ollama workspace tools, memory, and installer behavior are otherwise unchanged.
