@@ -204,5 +204,5 @@ flightProgress() {
 # LOOK unified command
 commands() { "$HOME/.local/bin/lk" help; }
 
-# LOOK Ollama — minimal chat with the currently loaded model.
+# LOOK Ollama — minimal on-demand chat; a resident model is reused when available.
 alias lo='lk o'

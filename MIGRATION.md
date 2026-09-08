@@ -1,9 +1,9 @@
-# LOOK 1.0.1
+# LOOK 1.0.2
 
-Ollama activity-state polish only.
+Surgical polish release from 1.0.1.
 
-- Shows animated `searching` while hosted web search is running.
-- Shows animated `thinking` while the local model owns the terminal.
-- Shows animated `remembering` while persistent memory is compressed/folded after an answer.
-- Ctrl-D / Ctrl-C continue to exit cleanly at the next input prompt.
-- No changes to model selection, memory semantics, filesystem tools, renderer behavior, installer behavior, or shortcut routing.
+- Help and `commands` show the stable live-filter action keys: `E`, `O`, `Y`, `P`.
+- The help pager accepts `j/k`, Up/Down, PageUp/PageDown, Space, `b`, `g/G`, `q`, and Esc.
+- `lo` no longer requires a model to already be resident. A loaded model is reused; otherwise `LOOK_OLLAMA_MODEL` is used (default `qwen3:8b`) and Ollama loads it on demand.
+- If the configured `OLLAMA_HOST` is local and unreachable, explicit `lo` use may start `ollama serve` when the binary exists. Use `lo --no-start` for connect-only behavior.
+- Filesystem rendering, filtering, previews, memory, web search, and file-tool behavior are unchanged.

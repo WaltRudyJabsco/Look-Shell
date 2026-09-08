@@ -29,7 +29,7 @@ The installer uses Homebrew/Linuxbrew for LOOK's dependencies, backs up
 an existing `.zshrc`, preserves existing secrets, installs LOOK under
 `~/.local/share/look`, and exposes `lk` through `~/.local/bin`.
 
-Ollama is optional. LOOK does not install, start, or manage it.
+Ollama is optional. LOOK does not install or manage Ollama. Starting `lo` may start a missing **local** Ollama server when the `ollama` binary is installed; `lo --no-start` preserves strict connect-only behavior.
 
 ## The basic idea
 
@@ -252,6 +252,10 @@ path that established the renderer, navigation model, live filtering,
 previews, installer, and Ollama integration. The README no longer
 carries the entire incremental development log now that the command
 vocabulary has settled.
+
+### 1.0.2
+
+Polishes the stable interface without changing LOOK's filesystem behavior. `lk help` and `commands` now document the final `E/O/Y/P` live-filter actions, and the help pager adds `j/k`, arrow keys, PageUp, and PageDown alongside the existing Space/b/g/G controls. `lo` now treats an idle Ollama server as ready-on-demand: it reuses a resident model when present, otherwise uses `LOOK_OLLAMA_MODEL` (default `qwen3:8b`). On explicit `lo` use, LOOK can also start a missing local Ollama server when the binary is installed; `--no-start` disables that convenience.
 
 ### 1.0.1
 

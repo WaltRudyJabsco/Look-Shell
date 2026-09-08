@@ -27,7 +27,7 @@ for c in zsh python3 git zoxide fzf nvim bat fortune cowsay; do
   if have "$c"; then echo "✓ $c"; else echo "✗ $c"; missing+=("$(package_for "$c")"); fi
 done
 if have neofetch || have fastfetch; then echo "✓ system fetch"; else echo "✗ system fetch"; missing+=(fastfetch); fi
-if have ollama; then echo "✓ ollama (optional)"; else echo "· ollama (optional; LO chat disabled until installed)"; fi
+if have ollama; then echo "✓ ollama (optional)"; else echo "· ollama (optional; needed only to start a local server)"; fi
 ((${#missing[@]}==0)) || run brew install "${missing[@]}"
 
 ZDIR="${ZSH:-$HOME/.oh-my-zsh}"
