@@ -1,15 +1,25 @@
 # LOOK Shell
 
-**A small, human-readable inspection layer for the terminal.**
+**An opinionated, human-readable layer over the Unix terminal.**
 
-LOOK is a portable personal shell environment for macOS and Linux. It
-turns recurring terminal intent into a small human vocabulary: look at
-files, a project, a command, a port, the machine, the network, or Ollama
-without remembering which Unix machinery answers each question. The
-normal Unix shell remains intact underneath it.
+LOOK is a portable personal shell environment for macOS and Linux. It is built around a simple idea: the terminal should make you think about **what you want to know or do**, not which combination of Unix commands happens to express it.
 
-It isn't trying to replace the terminal. It's trying to make the
-terminal nicer to live in.
+`lk` means **look at this**.
+
+``` text
+lk .                 what is here?
+lk python3           what is this command?
+lk 8080              what owns this port?
+lk run               what can I do here?
+lk up                what is running?
+lk machine           what machine am I on?
+lk net               how am I connected?
+lk ollama            what is Ollama doing?
+```
+
+LOOK does not replace Unix. It sits lightly on top of it. Zsh still navigates. Git is still Git. Ollama is still Ollama. Files are still files. The ordinary commands remain available whenever you want them.
+
+LOOK is simply opinionated about the things you do all the time: **inspect first, make the common path obvious, keep dangerous actions explicit, and get out of the way.**
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
@@ -31,385 +41,301 @@ an existing `.zshrc`, preserves existing secrets, installs LOOK under
 
 Ollama is optional. LOOK does not install or manage Ollama. Starting `lo` may start a missing **local** Ollama server when the `ollama` binary is installed; `lo --no-start` preserves strict connect-only behavior.
 
-## The basic idea
+## The LOOK grammar
 
-LOOK started as a better answer to “what’s here?” In 2.0 the same idea
-extends to the rest of the computer: **`lk <anything>` means inspect it.**
-Paths still get the familiar filesystem renderer. Commands, ports,
-processes and named system objects get small purpose-built views.
+There are only a few ideas to remember.
 
 ``` text
-lk .                 what's here?
-lk python3           how does this command resolve?
-lk 8080              what owns this port?
-lk run               what can I do in this project?
-lk up                what's listening?
-lk machine           what machine am I on?
-lk net               how am I connected?
+lk THING             inspect something
+l                     look around interactively
+lo                    talk to local Ollama
+lcp / lmv / lrm       explicit local file actions
+lk undo               undo the last LOOK file action
+lh                    come home
 ```
 
-Inspection remains LOOK's default. File mutation is deliberately separated into explicit `l*` verbs that hand the work to ordinary Unix tools; LOOK still does not start services, kill processes, edit PATH, or execute project actions.
+Everything else is a refinement of those ideas.
 
-## Core commands
+An existing path is treated as a path. A number in the port range is treated as a port. An executable name is inspected as a command. LOOK can then make a conservative process-name match. Explicit views such as `git`, `machine`, `gpu`, `net`, `tailscale`, `ollama`, `env`, and `path` are predictable shortcuts into the same inspection grammar.
 
-``` text
-lk [THING]           inspect a path, command, port, or process
-lk detail [PATH]     detailed filesystem view
-lk dirs/files        directory/file views
-lk tree/recent/size  alternate filesystem views
+The distinction matters: **inspection is the default; mutation is explicit.**
 
-lk run [PATH]       recognize project + show meaningful actions
-lk up / ports        listening processes and ports
-lk port NUMBER       inspect one port
-lk process TERM      find running processes
-lk pid NUMBER        inspect one process ID
-lk git [PATH]        repository root, branch, remote, changes
-lk machine / box     OS, CPU, RAM, disk, GPU capability
-lk disk              disk usage
-lk gpu               focused GPU status
-lk net / network     local network + Tailscale identity
-lk tailscale         tailnet status
-lk ollama            Ollama binary/server/model status
-lk env / path        useful environment + PATH diagnostics
-lk why COMMAND       explain executable resolution/conflicts
+## Looking at files
 
-lk home              friendly terminal home snapshot
-lk doctor            environment and capability health
-lk config            installed paths and configuration
-lk secrets           secrets status, never contents
-lk help              full command screen
-lk version           installed version
-```
-
-The fast filesystem vocabulary is unchanged:
+LOOK began as a better answer to “what's here?” and that remains its center.
 
 ``` text
 l                  interactive smart view
-ll                 interactive detail view
-ld                 interactive directories
-lf                 interactive files
-lt                 interactive tree
-lr                 interactive recent
-lz                 interactive size view
+ll                 detailed view
+ld                 directories
+lf                 files
+lt                 tree
+lr                 recently modified
+lz                 size view
+
 zll WORD           zoxide jump + smart view
 cdl WORD           zoxide jump + detail view
 fznv               fuzzy-find into Neovim
-f                  fuzzy helper
-lh                 LOOK home
-rs                 reset ritual
-commands           LOOK help
 ```
 
-### File cards and explicit file actions
+Small directories get a readable folders/files presentation. Larger directories collapse into a compact grouped grid. The renderer uses the actual terminal dimensions rather than assuming a fixed width.
 
-`lk FILE` is now an interactive object card: metadata, a paged bounded text/source preview, first-page PDF text when `pdftotext` is available, and live file actions. The card stays open until you quit or explicitly print the path. Images/media retain rich `file` metadata and remain one Enter/open action away; LOOK does not require a terminal-specific graphics protocol.
-
-Inside the file card: `j/k` or arrows scroll, Space/`b` page, Enter opens, `E` edits, `Y` copies the path, `P` prints it, and `M/C/S/R` perform explicit move/copy/send/remove actions.
-
-Mutation stays outside `lk`:
+LOOK's file vocabulary is intentionally visual but terminal-native:
 
 ``` text
-lmv [PATH]    choose/move a file or directory with mv -i
-lcp [PATH]    choose/copy with cp -i (recursive for directories)
-lscp [PATH]   choose/send with scp
-lrm [PATH]    choose/remove; requires typing REMOVE
+◆  directory
+▸  executable
+↗  symlink
+·  regular file
 ```
 
-With no path, each command opens a tiny `fzf` selector for the current directory. With a path, it acts on that explicit path. LOOK gathers intent and confirmation; `mv`, `cp`, `scp`, and `rm` remain the machinery underneath. The original system commands are untouched.
+No patched font is required.
 
-### Inspection grammar
+### Filtering and navigation
 
-Classification is deliberately conservative. Existing paths win first;
-numeric values in the port range are inspected as ports; executable names
-are resolved through PATH; then LOOK makes a best-effort process-name match.
-Named views such as `git`, `machine`, `gpu`, `net`, `tailscale`, `ollama`,
-`env`, and `path` are explicit and predictable.
-
-`lk run` only **suggests** project actions based on markers such as
-`package.json`, `pyproject.toml`, `Cargo.toml`, `Makefile`, Docker files,
-and `index.html`. It never runs them. `lk up` is the complementary view for
-what is already listening.
-
-`lk why COMMAND` is the PATH-debugging view: it reports the selected
-executable, symlink target, permissions, and alternate executable matches.
-Shell aliases/functions live in the parent Zsh process, so when LOOK cannot
-see one it explicitly points you to `type -a COMMAND`.
-
-### Home
-
-`lk home` (or `lh`) clears to a small LOOK landing screen, shows the current folder, Git branch when present, lightweight Ollama status, and a cowsay fortune, then immediately returns to the normal shell prompt. It is a reset surface, not a dashboard or background process. `rs` remains the existing neofetch/fortune/cowsay reset ritual.
-
-`l WORD` is smart navigation. If `WORD` names an explicit directory,
-LOOK enters it directly; otherwise zoxide resolves it from your
-navigation history and LOOK opens there.
-
-## Interactive LOOK
-
-The short view commands (`l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`) keep
-LOOK active even when only a few files are present.
-
-Press `Enter` or `/` to begin a live filter. Matching is
-substring-based, and multiple words form an order-independent AND
-search: `cache safari` finds names containing both terms. In tree mode,
-filtering searches recursively through the displayed depth while
-retaining parent folders as context.
-
-The highlighted result follows the arrow keys immediately. Wide
-terminals place the preview beside the results; narrow terminals place
-it below.
+The short views stay interactive even when a directory contains only a few items. Press `Enter` or `/` to filter. Multiple words form an order-independent AND search, so `cache safari` finds names containing both terms.
 
 ``` text
-Up / Down    choose highlighted match
-PageUp/Down  move through long result sets
-Enter        directory: browse deeper · file: open with OS default
-E            edit highlighted file
-O            open with another installed application
-Y            copy absolute path
-P            print absolute path and exit
-Backspace    delete filter text
-Esc          clear / leave filtering
-q            quit
+Up / Down     choose
+PageUp/Down   move through long results
+Enter         browse directory / open file
+E             edit
+O             open with another installed application
+Y             copy absolute path
+P             print absolute path and exit
+Esc           clear / leave filtering
+q             quit
 ```
 
-The capital action keys are intentional: **lowercase letters remain
-ordinary filter text.** `E`, `O`, `Y`, and `P` therefore work without
-stealing characters from a filename search.
+Lowercase letters remain ordinary search text; capital letters are actions.
 
-LOOK opens executable files rather than executing them. Running code
-remains an explicit shell action.
+Tree filtering searches recursively through the displayed depth and keeps parent directories as context. Wide terminals place previews beside results; narrow terminals place them below.
 
-### Previews
+### Previews and file cards
 
-LOOK keeps previews deliberately lightweight:
+LOOK keeps previews useful and bounded:
 
--   text and source files show bounded text
--   directories show compact contents
--   PDFs show first-page text when `pdftotext` is available
--   images, media, archives, and other binaries show useful type/size
-    metadata
+- text and source files show a chunk of readable text;
+- directories show compact contents;
+- PDFs show extracted text when `pdftotext` is available;
+- images, media, archives, and binaries show useful type and size metadata.
 
-`Enter` opens a file with the operating-system default. `O` lets you
-choose another installed application for that open without changing the
-default association.
+`lk FILE` opens a richer interactive file card with metadata, a pageable preview, and explicit actions:
+
+``` text
+Enter   open
+E       edit
+Y       copy path
+P       print path
+M       move
+C       copy
+S       send with scp
+R       remove
+q       quit
+```
+
+LOOK opens executable files; it does not execute them merely because you inspected them.
+
+## Looking at the computer
+
+The same grammar extends beyond files.
+
+``` text
+lk run [PATH]        recognize a project and suggest useful actions
+lk up / ports        show listening processes and ports
+lk port NUMBER       inspect one port
+lk process TERM      find a running process
+lk pid NUMBER        inspect one process ID
+lk git [PATH]        repo root, branch, origin, changes
+lk machine / box     OS, CPU, RAM, disk, GPU capability
+lk gpu               focused GPU status
+lk disk              disk usage
+lk net / network     local network + Tailscale identity
+lk tailscale         tailnet status
+lk ollama            Ollama server, model, and memory status
+lk env               useful environment
+lk path              PATH entries, duplicates, missing directories
+lk why COMMAND       explain command resolution and conflicts
+```
+
+`lk run` answers “what can I do here?” by recognizing markers such as `package.json`, `pyproject.toml`, `Cargo.toml`, `Makefile`, Docker files, and `index.html`. It suggests likely project commands but **never executes them**.
+
+`lk up` answers the complementary question: “what is already running?”
+
+`lk why COMMAND` reports the executable LOOK finds, its resolved symlink target, permissions, and alternate executable matches on PATH. Shell aliases and functions belong to the parent Zsh process, so LOOK points to `type -a COMMAND` when the shell itself needs to answer.
+
+These system views are inspection tools. LOOK does not quietly start services, kill processes, edit PATH, or change system configuration.
+
+## Acting on files
+
+LOOK makes local filesystem actions explicit:
+
+``` text
+lcp [PATH]           copy
+lmv [PATH]           move or rename
+lrm [PATH]           remove
+lscp [PATH]          send with scp
+```
+
+Without a path, the commands open a small `fzf` chooser in the current directory. With a path, they act on that path directly.
+
+Removal uses a small confirmation:
+
+``` text
+remove file.txt? [r/Enter cancels] › r
+```
+
+The interactive `lk FILE` card and `lo` filesystem tools use the same underlying local mutation layer.
+
+### Undo
+
+``` text
+lk undo
+```
+
+LOOK records its most recent local copy, move/rename, remove, and directory-creation operations. `lk undo` reverses the latest one regardless of whether it came from `lcp` / `lmv` / `lrm`, the interactive file card, or `lo`.
+
+Removal is recoverable: LOOK moves the object into its private undo store instead of immediately destroying it. Undo is conservative. If reversing an action would overwrite something, remove a changed copy, or otherwise make an unsafe assumption, LOOK refuses.
+
+The journal retains the most recent 20 LOOK transactions.
+
+This is deliberately **LOOK undo**, not shell-wide magic. Ordinary `cp`, `mv`, `rm`, and other Unix commands remain untouched and are not added to LOOK's history. `lscp` is also outside undo because a remote filesystem change cannot be safely reversed locally.
 
 ## Ollama: `lo`
 
-LOOK includes an optional minimal terminal interface for Ollama. It reuses
-a resident model when available and can start a missing local Ollama server
-on explicit `lo` use when the binary is installed:
+`lo` is a deliberately small terminal conversation interface for local Ollama.
 
 ``` sh
 lo
 lk o
-```
-
-Bare `lk ollama` is now the v2 inspection view. `lo` / `lk o` opens the
-conversation interface; `lk ollama search ...` or `lk ollama <prompt>`
-remain accepted as the long-form chat spelling. If Ollama is reachable,
-chat detects the currently loaded model and opens a terminal conversation. You can also supply the first prompt
-directly:
-
-``` sh
 lo explain this error
 ```
 
+It reuses a resident model when one is available. If the local Ollama server is not running but the `ollama` binary exists, explicit `lo` use can start it; `lo --no-start` is strict connect-only behavior.
+
+Bare `lk ollama` is inspection rather than chat:
+
+``` text
+ollama
+  binary  /usr/local/bin/ollama
+  server  ready
+  model   qwen3:8b
+  memory  idle
+```
+
+### Workspace awareness
+
+`lo` knows the directory in which it was started. It receives a bounded snapshot and, when supported by the model, can use a deliberately small filesystem toolset rooted to that workspace:
+
+``` text
+list_files       inspect directories
+read_file        read bounded text
+search_files     search names and bounded text
+write_file       intentional UTF-8 text creation/editing
+copy_path        exact copy; file copies are SHA-256 verified
+move_path        move or rename
+remove_path      explicit recoverable removal
+make_directory   create a directory
+```
+
+Paths cannot escape the starting workspace. Binary and oversized reads are rejected or bounded. Existing files are protected unless replacement is explicitly requested. Arbitrary shell execution is not exposed.
+
+The distinction between `write_file` and `copy_path` is intentional: **the model manipulates meaning; filesystem tools manipulate bytes.**
+
+### Persistent memory without the wait
+
+`lo` carries a small amount of memory across sessions: five compressed recent exchanges plus a rolling long-term summary.
+
+``` text
+~/.local/share/look/ollama_memory.json
+```
+
+Memory compression is housekeeping, so it does not sit on the interactive path. After an answer, the exchange is durably queued and a single detached LOOK worker remembers it in the background. You can keep talking or leave `lo` immediately.
+
+``` text
+lo › Here's the answer.
+
+  · remembering in background
+
+you ›
+```
+
+The worker processes queued exchanges serially and exits when there is nothing left to do. There is no daemon or persistent service. `lk ollama` reports whether memory is idle, queued, or remembering.
+
+The memory file uses private permissions (`0600`).
+
 ### Web search
 
-If `OLLAMA_API_KEY` is available in the shell environment, web search
-can be exposed to tool-capable models.
+If `OLLAMA_API_KEY` is present in the shell environment, tool-capable models can use Ollama web search.
 
 ``` sh
 lo search
 lo search latest Ollama changes
 ```
 
-`lo search` searches first on each turn before answering from current
-results. The API key is inherited from the shell and is never stored by
-LOOK.
+`lo search` searches first on each turn. The key is inherited from the shell and is never copied into LOOK's configuration or memory.
 
-### Workspace awareness
-
-
-
-
-### One undo path
-
-All LOOK-owned local file mutations now share the same transaction journal: `lo` filesystem tools, `lcp` / `lmv` / `lrm`, and the interactive `lk FILE` card. `lk undo` therefore reverses the last LOOK copy, move/rename, remove, or mkdir regardless of which LOOK interface performed it. `lrm` and the file card use a simple `r` + Enter confirmation; empty Enter cancels.
-
-### Undo
-
-LOOK filesystem actions are reversible with `lk undo`. Copies, moves/renames, removals, and directory creation record a small LOOK transaction. Removal is recoverable: the item moves into LOOK's private undo store rather than being immediately destroyed. Undo refuses if reversal would overwrite or destroy changed filesystem state. LOOK keeps the most recent 20 transactions.
-
-
-### Background memory
-
-`lo` no longer blocks the prompt while compressing persistent memory. After an answer, the exchange is durably queued and a single detached LOOK worker performs remembering in the background. You can keep chatting or leave `lo` immediately; the worker survives the conversation and drains queued exchanges serially.
-
-`lk ollama` reports `memory  remembering` while the worker is active. No daemon is installed: the worker exits when the queue is empty.
-
-### LO filesystem operations
-
-`lo` now distinguishes text editing from filesystem operations. When you ask it to copy, move, rename, remove, or create a directory inside the current workspace, it has dedicated bounded tools instead of reconstructing files through the language model.
+## Home
 
 ``` text
-copy_path       exact file/directory copy; files are SHA-256 verified
-move_path       move or rename an existing path
-remove_path     explicit removal only
-make_directory  create a directory
+lk home
+lh
 ```
 
-`write_file` is for intentional UTF-8 text creation/editing only. It is explicitly not a copy mechanism. All of these tools remain restricted to the workspace where `lo` was started.
+HOME is LOOK's small landing screen: current directory, Git branch when present, lightweight Ollama state, and a random fortune/cowsay. Then it immediately gives the shell back.
 
+It is intentionally not a dashboard.
 
-`lo` knows the directory in which it was started and receives a bounded
-snapshot of that workspace. Tool-capable models can use a deliberately
-small filesystem toolset to:
+`rs` remains the old-school reset ritual: clear the screen, show machine information, fortune/cowsay, and return to work.
 
--   list files and directories
--   read bounded text files
--   search filenames and bounded text content
--   create or write UTF-8 text files when explicitly requested
-
-The tools are rooted to the starting workspace. Paths cannot escape it,
-binary and oversized operations are rejected or bounded, existing files
-are protected unless replacement is explicitly requested, and arbitrary
-shell execution is not exposed.
-
-### Persistent memory
-
-`lo` carries a small amount of memory across sessions: five compressed
-recent exchanges plus one rolling long-term summary. When the recent
-window fills, the oldest note is folded into long-term memory.
+## Diagnostics and configuration
 
 ``` text
-~/.local/share/look/ollama_memory.json
+lk doctor            is LOOK healthy?
+lk config            where is everything?
+lk secrets           are secrets configured safely?
+lk help              what can LOOK do?
+lk version           what is installed?
 ```
 
-The memory file uses private permissions (`0600`).
+`lk doctor` checks the core shell environment and reports optional capabilities such as Ollama without treating them as required.
 
-LOOK 1.0.1 also shows lightweight activity feedback during synchronous
-work:
-
-``` text
-· searching
-· thinking
-· remembering
-```
-
-This makes model, search, and post-answer memory work visibly distinct
-from a hung terminal. `Ctrl-C` and `Ctrl-D` remain safe exit signals
-when control returns to the input prompt.
-
-## Secrets
-
-Real secrets stay in:
+Real secrets belong in:
 
 ``` text
 ~/.zsh_secrets
 ```
 
-Only `zsh_secrets.example` belongs in Git. `lk secrets` reports status,
-never contents.
-
-## Diagnostics
-
-After installation:
-
-``` sh
-lk doctor
-```
-
-It reports the core LOOK environment plus optional Ollama state: binary,
-local server, loaded model, web-search key, and persistent memory.
-
-For installed paths and configuration:
-
-``` sh
-lk config
-```
+Only `zsh_secrets.example` belongs in Git. `lk secrets` reports the file's status and permissions, never its contents.
 
 ## Requirements
 
-The installer handles LOOK's normal dependencies. The core environment
-uses Zsh, Python 3, Git, zoxide, fzf, Neovim, and a handful of small
-terminal utilities. Powerlevel10k and the configured Zsh plugins are
-installed as part of the shell setup.
+The installer handles LOOK's normal dependencies. The core environment uses Zsh, Python 3, Git, zoxide, fzf, Neovim, and a handful of small terminal utilities. Powerlevel10k and the configured Zsh plugins are installed as part of the shell setup.
 
-Ollama is optional. PDF text previews are enhanced when `pdftotext` is
-available.
+Ollama is optional. PDF text previews are enhanced when `pdftotext` is available.
 
-## LOOK 2.0
+LOOK's Python side is otherwise deliberately boring: standard-library code, ordinary subprocesses, terminal dimensions, ANSI color, and native operating-system facilities where useful.
 
-**2.0 expands LOOK from “look at files” to “look at the computer.”** The
-existing filesystem renderer and short-command muscle memory are preserved.
-The new inspection layer adds project/run hints, listeners/ports, Git,
-machine/GPU, network/Tailscale, Ollama, environment/PATH, command resolution,
-and conservative `lk <anything>` classification. These views are read-only.
+## Philosophy
 
-## LOOK 1.0
+LOOK is opinionated, but it is not possessive.
 
-### 1.0.6
+It does not try to replace the shell with an application, turn the terminal into a dashboard, hide the filesystem behind a database, or invent a new abstraction for every Unix command. It notices a smaller problem: many ordinary terminal tasks begin with a human question and end with remembering machinery.
 
-Teaches `lo` about its LOOK Shell interface and capabilities. The system context now explicitly describes the supported lightweight Markdown, current-workspace file tools, optional web search, and the boundaries on those capabilities. Markdown `http/https` links are emitted as OSC 8 terminal hyperlinks when supported, so labeled links can be clicked directly in terminals such as iTerm2. No model, memory, search, filesystem-tool, or navigation semantics changed.
+**What's here?**
 
-### 1.0.3
+**Where is that file?**
 
-Fixes Up/Down and PageUp/PageDown handling in the built-in `lk help` pager. Ollama chat output also gains restrained terminal-native ANSI styling: distinct heading levels, italic emphasis, code and links, plus different `you ›` and `lo ›` labels.
+**What owns this port?**
 
+**Why is this command resolving there?**
 
-**1.0 is the stable interface.** The 0.x releases were the development
-path that established the renderer, navigation model, live filtering,
-previews, installer, and Ollama integration. The README no longer
-carries the entire incremental development log now that the command
-vocabulary has settled.
+**What can I run in this project?**
 
-### 1.0.2
+**What is Ollama doing?**
 
-Polishes the stable interface without changing LOOK's filesystem behavior. `lk help` and `commands` now document the final `E/O/Y/P` live-filter actions, and the help pager adds `j/k`, arrow keys, PageUp, and PageDown alongside the existing Space/b/g/G controls. `lo` now treats an idle Ollama server as ready-on-demand: it reuses a resident model when present, otherwise uses `LOOK_OLLAMA_MODEL` (default `qwen3:8b`). On explicit `lo` use, LOOK can also start a missing local Ollama server when the binary is installed; `--no-start` disables that convenience.
+LOOK gives those questions a consistent surface. The cleverness stays underneath. When LOOK acts, the action is explicit and, where practical, reversible. When ordinary Unix is clearer, Unix remains right there.
 
-### 1.0.1
+Zsh handles navigation and composition. Python handles presentation and inspection. Small native tools do the jobs they already do well.
 
-Adds visible `searching`, `thinking`, and `remembering` feedback to
-Ollama operations so synchronous work is clearly distinguishable from a
-hung terminal. Model, memory, search, and filesystem behavior are
-otherwise unchanged.
-
-### 1.0.0
-
-Establishes the stable LOOK filesystem/navigation interface, including
-the final live-filter action vocabulary:
-
-``` text
-E  edit
-O  open with
-Y  copy absolute path
-P  print absolute path and exit
-```
-
-Lowercase characters remain available for filtering.
-
-------------------------------------------------------------------------
-
-LOOK stays intentionally small: Zsh handles navigation and composition,
-Python handles filesystem presentation, and the ordinary Unix tools
-remain underneath both.
-
-
-### 1.0.6
-
-Web-backed `lo` answers now preserve the exact URLs returned by search and emit complete Markdown links, preventing citation-looking labels with no real hyperlink target.
-
-
-### 1.0.6
-
-Terminal polish: web links keep their complete literal URL visible for native terminal detection/copy/open behavior, and `lk help` gains restrained ANSI semantic color. No runtime behavior changes.
-
-
-### 1.0.7
-
-Fixes `lk help` startup after the 1.0.6 ANSI help-color pass by importing the regular-expression module used by the help formatter.
-
-
-### 1.0.8
-
-Adds `lk home` / `lh`: a lightweight terminal landing screen with current location, Git/Ollama status, and a cowsay fortune. It exits immediately back to the shell. Help and README are updated; existing `rs` behavior is unchanged.
+**Keep Unix. Lose some syntax.**
