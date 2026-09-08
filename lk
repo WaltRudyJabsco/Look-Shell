@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="1.0.8"
+VERSION="2.0.0"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -87,11 +87,11 @@ def _help_color(body):
     if not sys.stdout.isatty():
         return body
     reset="\033[0m"; bold="\033[1m"; cyan="\033[36m"; magenta="\033[35m"; yellow="\033[33m"
-    section_names={"FILES","SYSTEM","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
+    section_names={"LOOK","INSPECT","SYSTEM","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
     out=[]
     for line in body.splitlines():
         stripped=line.strip()
-        if "LOOK " in line and "filesystem, navigation, shell" in line:
+        if "LOOK " in line and ("filesystem, navigation, shell" in line or "inspect the computer" in line):
             out.append(cyan+bold+line+reset); continue
         if stripped in section_names:
             out.append(magenta+bold+line+reset); continue
@@ -112,16 +112,32 @@ def help_screen():
        ███████╗ ██║  ██╗
        ╚══════╝ ╚═╝  ╚═╝
 
-       LOOK {VERSION} · filesystem, navigation, shell
+       LOOK {VERSION} · inspect the computer
 
-FILES
-  lk [PATH]            smart view
+LOOK
+  lk [THING]           inspect a path, command, port, or process
+  lk [PATH]            smart filesystem view
   lk detail [PATH]     detailed view
   lk dirs [PATH]       directories
   lk files [PATH]      files
   lk tree [PATH]       tree
   lk recent [PATH]     newest first
   lk size [PATH]       size-oriented
+
+INSPECT
+  lk run [PATH]        what can I do here?
+  lk up / ports        what is listening?
+  lk port NUMBER       inspect one listening port
+  lk process TERM      find a running process
+  lk pid NUMBER        inspect one process ID
+  lk git [PATH]        repository status
+  lk machine / gpu     machine capabilities
+  lk disk              disk usage
+  lk net               network + Tailscale identity
+  lk tailscale         tailnet status
+  lk ollama            Ollama status
+  lk env / path        environment / PATH diagnostics
+  lk why COMMAND       explain command resolution
 
 SYSTEM
   lk home              reset to a friendly LOOK home screen
@@ -986,8 +1002,370 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
                 memory = _remember_exchange(base, model, memory, prompt, answer)
             break
 
+
+def _c(text, code):
+    if not sys.stdout.isatty():
+        return str(text)
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _title(name, detail=''):
+    tail=f"  {_c('· '+detail, '2')}" if detail else ''
+    print(f"{_c(name, '1;36')}{tail}")
+
+
+def _run_text(args, timeout=1.5):
+    try:
+        r=subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip() if r.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def inspect_command(name):
+    """Explain how a command resolves without changing the shell."""
+    path=shutil.which(name)
+    _title(name, 'command')
+    if not path:
+        print(f"  {_c('✗', '31')} not found on PATH")
+        # zsh can know about aliases/functions that a child Python process cannot inspect directly.
+        print(f"  {_c('hint', '33')} run: type -a {name}")
+        return 1
+    real=str(Path(path).resolve())
+    print(f"  {_c('✓', '32')} executable  {path}")
+    if real != path:
+        print(f"  {_c('↗', '36')} resolves     {real}")
+    try:
+        st=Path(path).stat()
+        mode=oct(st.st_mode & 0o777)
+        print(f"  permissions {mode}")
+    except OSError:
+        pass
+    matches=[]
+    for folder in os.environ.get('PATH','').split(os.pathsep):
+        candidate=Path(folder).expanduser()/name
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            val=str(candidate)
+            if val not in matches: matches.append(val)
+    if len(matches)>1:
+        print("  alternatives")
+        for m in matches[:8]: print(f"    · {m}")
+    return 0
+
+
+def inspect_port(port):
+    _title(str(port), 'port')
+    found=''
+    if shutil.which('lsof'):
+        found=_run_text(['lsof','-nP',f'-iTCP:{port}','-sTCP:LISTEN'])
+    elif shutil.which('ss'):
+        found='\n'.join(x for x in _run_text(['ss','-ltnp']).splitlines() if f':{port} ' in x or f':{port}\n' in x)
+    if found:
+        print(found)
+        return 0
+    print(f"  {_c('·', '33')} no listening TCP process found")
+    return 1
+
+
+def inspect_git(path='.'):
+    target=Path(path).expanduser().resolve()
+    root=_run_text(['git','-C',str(target),'rev-parse','--show-toplevel'])
+    _title('git', str(target))
+    if not root:
+        print(f"  {_c('·', '33')} not a Git repository")
+        return 1
+    branch=_run_text(['git','-C',root,'branch','--show-current']) or '(detached)'
+    status=_run_text(['git','-C',root,'status','--short'])
+    remote=_run_text(['git','-C',root,'remote','get-url','origin'])
+    print(f"  root    {root}")
+    print(f"  branch  {_c(branch, '36')}")
+    if remote: print(f"  origin  {remote}")
+    if status:
+        lines=status.splitlines()
+        print(f"  changes {_c(str(len(lines)), '33')}")
+        for line in lines[:10]: print(f"    {line}")
+        if len(lines)>10: print(f"    {_c('…', '2')} {len(lines)-10} more")
+    else:
+        print(f"  {_c('✓', '32')} clean")
+    return 0
+
+
+def inspect_project(path='.'):
+    """Recognize a project and show likely actions; never executes them."""
+    d=Path(path).expanduser().resolve()
+    _title('run', str(d))
+    if not d.is_dir():
+        print(f"  {_c('✗', '31')} not a directory")
+        return 1
+    actions=[]; kinds=[]
+    def has(name): return (d/name).exists()
+    if has('package.json'):
+        kinds.append('Node/Bun')
+        try:
+            import json
+            scripts=json.loads((d/'package.json').read_text()).get('scripts',{})
+            runner='bun run' if has('bun.lock') or has('bun.lockb') else 'npm run'
+            for key in ('dev','start','test','build','serve'):
+                if key in scripts: actions.append((key,f'{runner} {key}'))
+        except Exception: pass
+    if has('pyproject.toml') or has('requirements.txt') or has('setup.py'):
+        kinds.append('Python')
+        if has('pytest.ini') or (d/'tests').exists(): actions.append(('test','python -m pytest'))
+        if has('main.py'): actions.append(('start','python main.py'))
+        elif has('app.py'): actions.append(('start','python app.py'))
+    if has('Cargo.toml'):
+        kinds.append('Rust'); actions += [('run','cargo run'),('test','cargo test'),('build','cargo build')]
+    if has('Makefile'):
+        kinds.append('Make'); actions.append(('targets','make -n <target>'))
+    if has('docker-compose.yml') or has('compose.yml') or has('compose.yaml'):
+        kinds.append('Docker Compose'); actions.append(('start','docker compose up'),('stop','docker compose down'))
+    if has('Dockerfile'):
+        kinds.append('Docker'); actions.append(('build','docker build .'))
+    if has('index.html'):
+        kinds.append('web'); actions.append(('serve','python3 -m http.server'))
+    if has('.git'): kinds.append('Git')
+    if not kinds:
+        print(f"  {_c('·', '33')} no recognized project markers")
+        return 1
+    print(f"  type    {' + '.join(dict.fromkeys(kinds))}")
+    if actions:
+        print("  actions")
+        seen=set()
+        for label,cmd in actions:
+            if cmd in seen: continue
+            seen.add(cmd); print(f"    {_c(f'{label:<10}', '36')} {cmd}")
+    else:
+        print(f"  {_c('·', '33')} project recognized; no obvious standard action")
+    return 0
+
+
+def inspect_up():
+    _title('up', 'listening services')
+    text=''
+    if shutil.which('lsof'):
+        text=_run_text(['lsof','-nP','-iTCP','-sTCP:LISTEN'])
+    elif shutil.which('ss'):
+        text=_run_text(['ss','-ltnp'])
+    if not text:
+        print(f"  {_c('·', '33')} no listener information available")
+        return 1
+    lines=text.splitlines()
+    for line in lines[:24]: print(line)
+    if len(lines)>24: print(f"{_c('… '+str(len(lines)-24)+' more', '2')}")
+    return 0
+
+
+def inspect_machine():
+    _title(platform.node() or 'machine', 'machine')
+    print(f"  OS      {platform.system()} {platform.release()}")
+    print(f"  arch    {platform.machine()}")
+    cpu=platform.processor()
+    if platform.system()=='Darwin':
+        cpu=_run_text(['sysctl','-n','machdep.cpu.brand_string']) or cpu
+    print(f"  CPU     {cpu or (str(os.cpu_count() or '?')+' logical cores')}")
+    mem=''
+    if platform.system()=='Darwin':
+        raw=_run_text(['sysctl','-n','hw.memsize'])
+        if raw.isdigit(): mem=f"{int(raw)/(1024**3):.1f} GB"
+    elif Path('/proc/meminfo').exists():
+        m=re.search(r'MemTotal:\s+(\d+)',Path('/proc/meminfo').read_text())
+        if m: mem=f"{int(m.group(1))*1024/(1024**3):.1f} GB"
+    if mem: print(f"  RAM     {mem}")
+    usage=shutil.disk_usage(HOME)
+    print(f"  disk    {usage.free/(1024**3):.0f} GB free / {usage.total/(1024**3):.0f} GB")
+    gpu=''
+    if shutil.which('nvidia-smi'):
+        gpu=_run_text(['nvidia-smi','--query-gpu=name,memory.free,memory.total','--format=csv,noheader,nounits'])
+    elif platform.system()=='Darwin' and shutil.which('system_profiler'):
+        raw=_run_text(['system_profiler','SPDisplaysDataType'],2.5)
+        m=re.search(r'Chipset Model:\s*(.+)',raw)
+        if m: gpu=m.group(1).strip()
+    if gpu: print(f"  GPU     {gpu.splitlines()[0]}")
+    return 0
+
+
+def inspect_network():
+    import socket
+    _title('network', platform.node())
+    local=[]
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip=info[4][0]
+            if not ip.startswith('127.') and ip not in local: local.append(ip)
+    except OSError: pass
+    print(f"  local   {', '.join(local) if local else 'unknown'}")
+    if shutil.which('tailscale'):
+        ip=_run_text(['tailscale','ip','-4'])
+        if ip: print(f"  tailnet {ip}")
+        status=_run_text(['tailscale','status'])
+        if status: print(f"  tailscale {_c('up', '32')}")
+    else:
+        print(f"  tailscale {_c('not installed', '2')}")
+    return 0
+
+
+def inspect_tailscale():
+    _title('tailscale')
+    if not shutil.which('tailscale'):
+        print(f"  {_c('·', '33')} not installed")
+        return 1
+    text=_run_text(['tailscale','status'])
+    if not text:
+        print(f"  {_c('·', '33')} installed but not connected")
+        return 1
+    lines=text.splitlines()
+    for line in lines[:24]: print(f"  {line}")
+    if len(lines)>24: print(f"  {_c('…', '2')} {len(lines)-24} more")
+    return 0
+
+
+def inspect_ollama():
+    import json, urllib.request
+    _title('ollama')
+    binary=shutil.which('ollama')
+    print(f"  binary  {binary or _c('not installed','2')}")
+    base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
+    try:
+        with urllib.request.urlopen(base+'/api/ps',timeout=.8) as r: models=json.load(r).get('models',[])
+        print(f"  server  {_c('ready','32')} · {base}")
+        if models:
+            for m in models[:6]: print(f"  model   {m.get('name') or m.get('model') or '?'}")
+        else: print(f"  model   {_c('idle','33')} · preferred {os.environ.get('LOOK_OLLAMA_MODEL','qwen3:8b')}")
+    except Exception:
+        print(f"  server  {_c('offline','33')} · {base}")
+    print(f"  web     {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
+    return 0
+
+
+def inspect_env():
+    _title('environment')
+    keys=['SHELL','TERM','EDITOR','VISUAL','PAGER','LANG','OLLAMA_HOST','LOOK_OLLAMA_MODEL','VIRTUAL_ENV']
+    for key in keys:
+        val=os.environ.get(key)
+        if val: print(f"  {key:<18} {val}")
+    print(f"  PATH entries        {len(os.environ.get('PATH','').split(os.pathsep))}")
+    return 0
+
+
+def inspect_path():
+    _title('PATH')
+    seen=set()
+    for i,raw in enumerate(os.environ.get('PATH','').split(os.pathsep),1):
+        p=Path(raw).expanduser()
+        state=_c('✓','32') if p.is_dir() else _c('✗','31')
+        dup=' '+_c('duplicate','33') if str(p) in seen else ''
+        seen.add(str(p))
+        print(f"  {i:>2} {state} {p}{dup}")
+    return 0
+
+
+def inspect_gpu():
+    _title('gpu')
+    if shutil.which('nvidia-smi'):
+        q='name,driver_version,memory.used,memory.free,memory.total,utilization.gpu,temperature.gpu'
+        text=_run_text(['nvidia-smi',f'--query-gpu={q}','--format=csv,noheader'])
+        print(text or '  nvidia-smi returned no data'); return 0 if text else 1
+    if platform.system()=='Darwin':
+        raw=_run_text(['system_profiler','SPDisplaysDataType'],3)
+        if raw:
+            for line in raw.splitlines():
+                if any(k in line for k in ('Chipset Model:','Metal Support:','VRAM')): print('  '+line.strip())
+            return 0
+    print(f"  {_c('·','33')} no supported GPU inspector found")
+    return 1
+
+
+def inspect_pid(pid):
+    _title(str(pid), 'process')
+    text=_run_text(['ps','-p',str(pid),'-o','pid=,ppid=,etime=,command='],2)
+    if not text:
+        print(f"  {_c('·','33')} process not found")
+        return 1
+    print(f"  {text.strip()}")
+    return 0
+
+
+def inspect_disk():
+    _title('disk')
+    seen=set()
+    for label,path in [('cwd',Path.cwd()),('home',HOME)]:
+        try:
+            usage=shutil.disk_usage(path)
+        except OSError:
+            continue
+        key=(usage.total,usage.free)
+        if key in seen: continue
+        seen.add(key)
+        used=usage.total-usage.free
+        pct=(used/usage.total*100) if usage.total else 0
+        print(f"  {label:<5} {path}")
+        print(f"        {used/(1024**3):.0f} GB used · {usage.free/(1024**3):.0f} GB free · {usage.total/(1024**3):.0f} GB total · {pct:.0f}%")
+    return 0
+
+
+def inspect_process(term):
+    """Best-effort process-name lookup for lk <anything>."""
+    text=_run_text(['ps','-axo','pid=,command='],2)
+    hits=[]
+    for line in text.splitlines():
+        stripped=line.strip()
+        if term.lower() not in stripped.lower():
+            continue
+        first=stripped.split(None,1)[0] if stripped else ''
+        if first.isdigit() and int(first)==os.getpid():
+            continue
+        hits.append(stripped)
+    if not hits: return None
+    _title(term, 'process')
+    for line in hits[:15]: print(f"  {line}")
+    if len(hits)>15: print(f"  {_c('…', '2')} {len(hits)-15} more")
+    return 0
+
+
+def inspect_file(path):
+    p=Path(path).expanduser().resolve()
+    _title(p.name, 'file')
+    try:
+        st=p.stat()
+        size=st.st_size
+        if size < 1024: shown=f"{size} B"
+        elif size < 1024**2: shown=f"{size/1024:.1f} KB"
+        elif size < 1024**3: shown=f"{size/1024**2:.1f} MB"
+        else: shown=f"{size/1024**3:.1f} GB"
+        print(f"  path    {p}")
+        print(f"  size    {shown}")
+        print(f"  mode    {oct(st.st_mode & 0o777)}")
+        print(f"  modified {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.st_mtime))}")
+    except OSError as exc:
+        print(f"  {_c('✗','31')} {exc}"); return 1
+    kind=_run_text(['file','-b',str(p)]) if shutil.which('file') else ''
+    if kind: print(f"  type    {kind}")
+    return 0
+
+
+def inspect_anything(term):
+    """Human-first classification for `lk <anything>`. Paths always win."""
+    expanded=Path(term).expanduser()
+    if expanded.exists():
+        if expanded.is_dir(): return render([str(expanded)])
+        return inspect_file(expanded)
+    if term.isdigit():
+        n=int(term)
+        if 1 <= n <= 65535: return inspect_port(n)
+    if shutil.which(term): return inspect_command(term)
+    proc=inspect_process(term)
+    if proc is not None: return proc
+    print(f"LOOK · don't know how to inspect {_c(term, '1;36')}")
+    print(f"  {_c('hint','33')} path · command · port · process, or try lk help")
+    return 1
+
+
 def main():
-    if len(sys.argv) >= 2 and sys.argv[1] in {"o", "ollama"}:
+    # `lk o` remains the chat verb. In v2, bare `lk ollama` is inspection;
+    # adding search/a prompt keeps the historical long-form chat spelling useful.
+    if len(sys.argv) >= 2 and (
+        sys.argv[1] == "o" or (sys.argv[1] == "ollama" and len(sys.argv) >= 3)
+    ):
         args=sys.argv[2:]
         allow_start=True
         if args and args[0] == "--no-start":
@@ -1016,5 +1394,32 @@ def main():
         print(f"LOOK secrets: {p} exists · permissions {mode} · contents hidden")
         return 0 if mode=="0o600" else 1
     if cmd in modes: return render(["--mode", modes[cmd], *rest])
+    if cmd in {"run","project"}: return inspect_project(rest[0] if rest else '.')
+    if cmd in {"up","ports","services"}: return inspect_up()
+    if cmd=="port":
+        if not rest or not rest[0].isdigit(): print("usage: lk port <number>"); return 2
+        port=int(rest[0]); return inspect_port(port) if 1 <= port <= 65535 else 2
+    if cmd in {"process","proc"}:
+        if not rest: print("usage: lk process <name>"); return 2
+        query=" ".join(rest); result=inspect_process(query)
+        if result is None:
+            _title(query, 'process'); print(f"  {_c('·','33')} no matching process found"); return 1
+        return result
+    if cmd=="pid":
+        if not rest or not rest[0].isdigit(): print("usage: lk pid <number>"); return 2
+        return inspect_pid(int(rest[0]))
+    if cmd=="git": return inspect_git(rest[0] if rest else '.')
+    if cmd in {"machine","box"}: return inspect_machine()
+    if cmd in {"net","network"}: return inspect_network()
+    if cmd=="tailscale": return inspect_tailscale()
+    if cmd=="ollama": return inspect_ollama()
+    if cmd=="env": return inspect_env()
+    if cmd=="path": return inspect_path()
+    if cmd=="gpu": return inspect_gpu()
+    if cmd=="disk": return inspect_disk()
+    if cmd=="why":
+        if not rest: print("usage: lk why <command>"); return 2
+        return inspect_command(rest[0])
+    if len(a)==1: return inspect_anything(cmd)
     return render(a)
 if __name__=="__main__": raise SystemExit(main())

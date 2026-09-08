@@ -33,3 +33,10 @@ A surgical Ollama-interface polish release.
 - Adds `lk home` and the `lh` shortcut.
 - HOME paints a clean LOOK landing screen, current folder, optional Git branch, lightweight Ollama status, and a cowsay fortune, then returns to the shell.
 - `rs`, filesystem behavior, Ollama chat, memory, and installer behavior are unchanged.
+
+
+## 2.0.0
+
+LOOK now treats `lk` as a general inspection verb while preserving the 1.x filesystem interface. New read-only views include `run`, `up`/`ports`, `git`, `machine`/`box`, `gpu`, `net`/`network`, `tailscale`, `ollama`, `env`, `path`, and `why COMMAND`. A single unknown argument is conservatively classified as an existing path, port, executable command, or matching process.
+
+Compatibility note: `lo` and `lk o` remain the Ollama chat interface. Bare `lk ollama` is now the Ollama inspection view; `lk ollama search ...` and `lk ollama <prompt>` still enter chat.

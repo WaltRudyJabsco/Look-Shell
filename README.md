@@ -1,12 +1,12 @@
 # LOOK Shell
 
-**A small, fast, opinionated filesystem environment for Zsh.**
+**A small, human-readable inspection layer for the terminal.**
 
 LOOK is a portable personal shell environment for macOS and Linux. It
-adds a responsive filesystem view, fast navigation, live filtering and
-previews, fuzzy finding, Neovim integration, diagnostics, and an
-optional local Ollama assistant --- while leaving the normal Unix shell
-underneath it intact.
+turns recurring terminal intent into a small human vocabulary: look at
+files, a project, a command, a port, the machine, the network, or Ollama
+without remembering which Unix machinery answers each question. The
+normal Unix shell remains intact underneath it.
 
 It isn't trying to replace the terminal. It's trying to make the
 terminal nicer to live in.
@@ -14,8 +14,6 @@ terminal nicer to live in.
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
 ![LOOK Shell help](screenshots/LOOK_Shell_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 ## Install
 
@@ -35,37 +33,57 @@ Ollama is optional. LOOK does not install or manage Ollama. Starting `lo` may st
 
 ## The basic idea
 
-LOOK has two related interfaces:
+LOOK started as a better answer to “what’s here?” In 2.0 the same idea
+extends to the rest of the computer: **`lk <anything>` means inspect it.**
+Paths still get the familiar filesystem renderer. Commands, ports,
+processes and named system objects get small purpose-built views.
 
--   **`lk`** is the explicit command. It renders a filesystem view and,
-    when the output fits, prints it and returns immediately.
--   **`l` and the other short commands** enter the interactive
-    filesystem view, where you can filter, preview, navigate, open,
-    edit, and work with paths.
+``` text
+lk .                 what's here?
+lk python3           how does this command resolve?
+lk 8080              what owns this port?
+lk run               what can I do in this project?
+lk up                what's listening?
+lk machine           what machine am I on?
+lk net               how am I connected?
+```
 
-Normal Unix behavior remains available. Bare `ls` invokes LOOK, while
-`ls -l`, `ls -la`, `ls FILE`, and other forms pass directly to the
-system `ls`.
+This is inspection, not management. LOOK does not start services, kill
+processes, edit PATH, execute project actions, or replace the Unix tools
+it reads from.
 
 ## Core commands
 
 ``` text
-lk                 smart filesystem view
-lk detail          detailed view
-lk dirs            directories only
-lk files           files only
-lk tree            recursive tree
-lk recent          newest first
-lk size            size-oriented view
-lk home            friendly terminal home snapshot
-lk doctor          environment and capability health
-lk config          installed paths and configuration
-lk secrets         secrets status, never contents
-lk help            full command screen
-lk version         installed version
+lk [THING]           inspect a path, command, port, or process
+lk detail [PATH]     detailed filesystem view
+lk dirs/files        directory/file views
+lk tree/recent/size  alternate filesystem views
+
+lk run [PATH]       recognize project + show meaningful actions
+lk up / ports        listening processes and ports
+lk port NUMBER       inspect one port
+lk process TERM      find running processes
+lk pid NUMBER        inspect one process ID
+lk git [PATH]        repository root, branch, remote, changes
+lk machine / box     OS, CPU, RAM, disk, GPU capability
+lk disk              disk usage
+lk gpu               focused GPU status
+lk net / network     local network + Tailscale identity
+lk tailscale         tailnet status
+lk ollama            Ollama binary/server/model status
+lk env / path        useful environment + PATH diagnostics
+lk why COMMAND       explain executable resolution/conflicts
+
+lk home              friendly terminal home snapshot
+lk doctor            environment and capability health
+lk config            installed paths and configuration
+lk secrets           secrets status, never contents
+lk help              full command screen
+lk version           installed version
 ```
 
-The fast vocabulary:
+The fast filesystem vocabulary is unchanged:
 
 ``` text
 l                  interactive smart view
@@ -81,8 +99,26 @@ fznv               fuzzy-find into Neovim
 f                  fuzzy helper
 lh                 LOOK home
 rs                 reset ritual
-commands           personal command reference
+commands           LOOK help
 ```
+
+### Inspection grammar
+
+Classification is deliberately conservative. Existing paths win first;
+numeric values in the port range are inspected as ports; executable names
+are resolved through PATH; then LOOK makes a best-effort process-name match.
+Named views such as `git`, `machine`, `gpu`, `net`, `tailscale`, `ollama`,
+`env`, and `path` are explicit and predictable.
+
+`lk run` only **suggests** project actions based on markers such as
+`package.json`, `pyproject.toml`, `Cargo.toml`, `Makefile`, Docker files,
+and `index.html`. It never runs them. `lk up` is the complementary view for
+what is already listening.
+
+`lk why COMMAND` is the PATH-debugging view: it reports the selected
+executable, symlink target, permissions, and alternate executable matches.
+Shell aliases/functions live in the parent Zsh process, so when LOOK cannot
+see one it explicitly points you to `type -a COMMAND`.
 
 ### Home
 
@@ -143,17 +179,19 @@ default association.
 
 ## Ollama: `lo`
 
-LOOK includes an optional minimal terminal interface for an
-**already-running Ollama server with an already-loaded model**:
+LOOK includes an optional minimal terminal interface for Ollama. It reuses
+a resident model when available and can start a missing local Ollama server
+on explicit `lo` use when the binary is installed:
 
 ``` sh
 lo
 lk o
-lk ollama
 ```
 
-If Ollama is reachable, `lo` detects the currently loaded model and
-opens a terminal conversation. You can also supply the first prompt
+Bare `lk ollama` is now the v2 inspection view. `lo` / `lk o` opens the
+conversation interface; `lk ollama search ...` or `lk ollama <prompt>`
+remain accepted as the long-form chat spelling. If Ollama is reachable,
+chat detects the currently loaded model and opens a terminal conversation. You can also supply the first prompt
 directly:
 
 ``` sh
@@ -252,6 +290,14 @@ installed as part of the shell setup.
 
 Ollama is optional. PDF text previews are enhanced when `pdftotext` is
 available.
+
+## LOOK 2.0
+
+**2.0 expands LOOK from “look at files” to “look at the computer.”** The
+existing filesystem renderer and short-command muscle memory are preserved.
+The new inspection layer adds project/run hints, listeners/ports, Git,
+machine/GPU, network/Tailscale, Ollama, environment/PATH, command resolution,
+and conservative `lk <anything>` classification. These views are read-only.
 
 ## LOOK 1.0
 
