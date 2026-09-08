@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.1.5"
+VERSION="2.1.8"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -13,6 +13,8 @@ UNDO_TRASH=STATE_DIR/"undo_trash"
 UNDO_LIMIT=20
 MEMORY_QUEUE=STATE_DIR/"memory_queue"
 MEMORY_WORKER_LOCK=STATE_DIR/"memory_worker.lock"
+OLLAMA_MODEL_FILE=STATE_DIR/"ollama_model"
+OLLAMA_MODELS_FILE=STATE_DIR/"ollama_models.json"
 RECENT_MEMORY_SLOTS=5
 
 def render(args):
@@ -142,6 +144,9 @@ INSPECT
   lk net               network + Tailscale identity
   lk tailscale         tailnet status
   lk ollama            Ollama status
+  lk ollama models     model control panel · Enter select · X enable/disable
+  lk ollama test       benchmark current model
+  lk ollama test --all compare installed models
   lk env / path        environment / PATH diagnostics
   lk why COMMAND       explain command resolution
 
@@ -167,7 +172,7 @@ FILE ACTIONS
   lmv [PATH]           LOOK-assisted move
   lcp [PATH]           LOOK-assisted copy
   lscp [PATH]          LOOK-assisted scp
-  lrm [PATH]\n  lk undo              undo the last LOOK filesystem action           LOOK-assisted remove (confirmed)
+  lrm [PATH]           LOOK-assisted remove (confirmed)\n  lk undo              undo the last LOOK filesystem action
 
 SHORTCUTS
   l / ls   smart view        ll       details
@@ -1192,11 +1197,37 @@ def _ensure_ollama_server(base, allow_start=True):
     return None
 
 
+def _preferred_ollama_model():
+    """Environment wins; otherwise remember the last model selected through LOOK."""
+    env=os.environ.get("LOOK_OLLAMA_MODEL","").strip()
+    if env:
+        return env
+    try:
+        saved=OLLAMA_MODEL_FILE.read_text(encoding="utf-8").strip()
+        if saved:
+            return saved
+    except OSError:
+        pass
+    return "qwen3:8b"
+
+
+def _save_preferred_ollama_model(model):
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp=OLLAMA_MODEL_FILE.with_suffix(".tmp")
+        tmp.write_text(model.strip()+"\n", encoding="utf-8")
+        os.chmod(tmp,0o600)
+        tmp.replace(OLLAMA_MODEL_FILE)
+        os.chmod(OLLAMA_MODEL_FILE,0o600)
+    except OSError:
+        pass
+
+
 def _choose_ollama_model(running):
-    """Keep a resident model when available; otherwise use LOOK's preferred model on demand."""
-    preferred = os.environ.get("LOOK_OLLAMA_MODEL", "qwen3:8b").strip() or "qwen3:8b"
-    names = [(m.get("name") or m.get("model") or "").strip() for m in (running or [])]
-    names = [name for name in names if name]
+    """Keep the selected/resident model when available; otherwise load the preferred model on demand."""
+    preferred=_preferred_ollama_model()
+    names=[(m.get("name") or m.get("model") or "").strip() for m in (running or [])]
+    names=[name for name in names if name]
     if preferred in names:
         return preferred, True
     if names:
@@ -1604,6 +1635,447 @@ def inspect_tailscale():
     return 0
 
 
+
+def _ollama_tags(base):
+    import json, urllib.request
+    with urllib.request.urlopen(base+"/api/tags", timeout=2) as response:
+        return json.load(response).get("models", [])
+
+
+def _ollama_post(base, endpoint, payload, timeout=120):
+    import json, urllib.request
+    data=json.dumps(payload).encode("utf-8")
+    request=urllib.request.Request(
+        base+endpoint, data=data,
+        headers={"Content-Type":"application/json"}, method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.load(response)
+
+
+def _ollama_capabilities(base, model):
+    """Return Ollama-declared capabilities, or None when this server cannot report them."""
+    try:
+        shown=_ollama_post(base, "/api/show", {"model":model}, timeout=8)
+    except Exception:
+        return None
+    caps=shown.get("capabilities")
+    if not isinstance(caps, list):
+        return None
+    return [str(cap).strip().lower() for cap in caps if str(cap).strip()]
+
+
+def _load_ollama_model_prefs():
+    try:
+        data=json.loads(OLLAMA_MODELS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        data={}
+    disabled=data.get("disabled",[])
+    return {str(name) for name in disabled if str(name).strip()}
+
+
+def _save_ollama_model_prefs(disabled):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp=OLLAMA_MODELS_FILE.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps({"disabled":sorted(disabled)}, indent=2)+"\n",
+        encoding="utf-8",
+    )
+    os.chmod(tmp,0o600)
+    tmp.replace(OLLAMA_MODELS_FILE)
+    os.chmod(OLLAMA_MODELS_FILE,0o600)
+
+
+def _ollama_set_model(base, model):
+    """Unload resident models, preload the selected one, and remember the choice."""
+    running=_ollama_ps(base)
+    for item in running:
+        name=(item.get("name") or item.get("model") or "").strip()
+        if name and name != model:
+            try:
+                _ollama_post(base, "/api/generate", {"model":name, "keep_alive":0}, timeout=30)
+            except Exception:
+                pass
+
+    # An empty generation request loads the model without asking it to answer.
+    _ollama_post(base, "/api/generate", {"model":model, "prompt":"", "keep_alive":"10m"}, timeout=180)
+    _save_preferred_ollama_model(model)
+    return model
+
+
+def _model_capability_label(caps):
+    if caps is None:
+        return "capabilities ?"
+    useful=[c for c in ("tools","thinking","vision","embedding","completion") if c in caps]
+    return " · ".join(useful) if useful else "text"
+
+
+def _ollama_model_rows(base, names, resident, disabled):
+    rows=[]
+    for name in names:
+        caps=_ollama_capabilities(base,name)
+        enabled=name not in disabled
+        state="✓" if enabled else "×"
+        live="●" if name in resident else " "
+        preferred="★" if name == _preferred_ollama_model() else " "
+        label=_model_capability_label(caps)
+        # Keep the raw name as field one. fzf displays fields 2.. so parsing
+        # never depends on decorative prefixes.
+        display=f"{state} {live}{preferred}  {name:<28} {label}"
+        rows.append((name,display,caps))
+    return rows
+
+
+def ollama_models(select_model=None):
+    """Tiny Ollama control panel: select a model or toggle LOOK benchmark inclusion with X."""
+    base=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434").rstrip("/")
+    if _ensure_ollama_server(base, allow_start=True) is None:
+        print("LOOK OLLAMA · server unavailable")
+        return 1
+
+    try:
+        installed=_ollama_tags(base)
+        running=_ollama_ps(base)
+    except Exception as exc:
+        print(f"LOOK OLLAMA · {exc}")
+        return 1
+
+    names=[(m.get("name") or m.get("model") or "").strip() for m in installed]
+    names=[n for n in names if n]
+    resident={(m.get("name") or m.get("model") or "").strip() for m in running}
+    resident.discard("")
+    disabled=_load_ollama_model_prefs()
+
+    if not names:
+        print("LOOK OLLAMA · no installed models")
+        return 1
+
+    if select_model:
+        if select_model not in names:
+            print(f"LOOK OLLAMA · model not installed: {select_model}")
+            return 1
+        chosen=select_model
+    elif sys.stdin.isatty() and sys.stdout.isatty() and shutil.which("fzf"):
+        chosen=None
+        while chosen is None:
+            rows=_ollama_model_rows(base,names,resident,disabled)
+            payload="\n".join(f"{name}\t{display}" for name,display,_ in rows)+"\n"
+            result=subprocess.run(
+                [
+                    "fzf",
+                    "--prompt","model › ",
+                    "--header","Enter select · X enable/disable for LOOK test --all · ✓ enabled · × disabled · ● resident · ★ preferred",
+                    "--height","~60%",
+                    "--reverse",
+                    "--no-multi",
+                    "--delimiter","\t",
+                    "--with-nth","2..",
+                    "--expect","x,X,enter",
+                ],
+                input=payload, text=True, capture_output=True
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return 0
+            lines=result.stdout.rstrip("\r\n").splitlines()
+            key=lines[0].lower() if lines else ""
+            selected=lines[1] if len(lines)>1 else ""
+            model=selected.split("\t",1)[0].strip()
+            if not model:
+                return 0
+            if key=="x":
+                if model in disabled:
+                    disabled.remove(model)
+                else:
+                    disabled.add(model)
+                _save_ollama_model_prefs(disabled)
+                continue
+            chosen=model
+    else:
+        rows=_ollama_model_rows(base,names,resident,disabled)
+        _title("ollama models")
+        print("  ✓ enabled for test --all · × disabled · ● resident · ★ preferred")
+        for _,display,_ in rows:
+            print(f"  {display}")
+        return 0
+
+    try:
+        with _activity(f"loading {chosen}"):
+            _ollama_set_model(base, chosen)
+    except Exception as exc:
+        print(f"LOOK OLLAMA · could not load {chosen}: {exc}")
+        return 1
+
+    caps=_ollama_capabilities(base,chosen)
+    suffix=f" · {_model_capability_label(caps)}"
+    if chosen in disabled:
+        suffix+=" · disabled from test --all"
+    print(f"LOOK OLLAMA · {_c(chosen,'1;32')} selected{suffix}")
+    return 0
+
+
+def _benchmark_tool(name, description, properties, required):
+    return {
+        "type":"function",
+        "function":{
+            "name":name,
+            "description":description,
+            "parameters":{
+                "type":"object",
+                "properties":properties,
+                "required":required,
+            },
+        },
+    }
+
+
+def _benchmark_chat(base, model, prompt, tools=None):
+    payload={
+        "model":model,
+        "messages":[
+            {"role":"system","content":"You are being tested for concise, reliable terminal-assistant behavior. Follow the request exactly."},
+            {"role":"user","content":prompt},
+        ],
+        "stream":False,
+        "keep_alive":"10m",
+    }
+    if tools:
+        payload["tools"]=tools
+    return _ollama_post(base, "/api/chat", payload, timeout=180)
+
+
+def _benchmark_speed(base, model):
+    """Measure first content arrival and Ollama's reported generation rate."""
+    import json, urllib.request
+    payload=json.dumps({
+        "model":model,
+        "messages":[{"role":"user","content":"Reply with exactly: LOOK-OK"}],
+        "stream":True,
+        "keep_alive":"10m",
+    }).encode("utf-8")
+    request=urllib.request.Request(
+        base+"/api/chat", data=payload,
+        headers={"Content-Type":"application/json"}, method="POST"
+    )
+    start=time.monotonic()
+    first=None
+    text=[]
+    final={}
+    with urllib.request.urlopen(request, timeout=180) as response:
+        for raw in response:
+            if not raw.strip():
+                continue
+            item=json.loads(raw)
+            content=(item.get("message") or {}).get("content","")
+            if content:
+                if first is None:
+                    first=time.monotonic()
+                text.append(content)
+            if item.get("done"):
+                final=item
+    elapsed=time.monotonic()-start
+    ttft=(first-start) if first is not None else elapsed
+    eval_count=int(final.get("eval_count") or 0)
+    eval_duration=float(final.get("eval_duration") or 0)
+    rate=(eval_count/(eval_duration/1e9)) if eval_count and eval_duration else 0.0
+    exact="".join(text).strip()=="LOOK-OK"
+    return ttft, rate, elapsed, exact
+
+
+def _tool_call(result):
+    calls=(result.get("message") or {}).get("tool_calls") or []
+    if not calls:
+        return "", {}
+    fn=(calls[0] or {}).get("function") or {}
+    return str(fn.get("name") or ""), fn.get("arguments") or {}
+
+
+def _benchmark_one_model(base, model):
+    """Small LOOK-specific test: responsiveness first, then tools only when supported."""
+    results={"model":model}
+    caps=_ollama_capabilities(base,model)
+    results["caps"]=caps
+
+    # Warm/load before timing so model-load time does not masquerade as token latency.
+    _ollama_post(base, "/api/generate", {"model":model, "prompt":"", "keep_alive":"10m"}, timeout=180)
+
+    # Speed/basic behavior is useful even when the model cannot call tools.
+    try:
+        ttft, rate, total, exact=_benchmark_speed(base, model)
+        results.update(ttft=ttft, rate=rate, total=total, exact=exact)
+    except Exception as exc:
+        results["speed_error"]=str(exc)
+        return results
+
+    declared_tools=None if caps is None else ("tools" in caps)
+    results["declared_tools"]=declared_tools
+
+    # If Ollama explicitly says tools are unsupported, do not turn that into a benchmark crash.
+    if declared_tools is False:
+        results["tools"]=None
+        return results
+
+    read_tool=_benchmark_tool(
+        "read_file","Read a bounded UTF-8 text file from the current workspace.",
+        {"path":{"type":"string"}},["path"]
+    )
+    copy_tool=_benchmark_tool(
+        "copy_path","Copy an existing file or directory exactly. Use this for copy, duplicate, clone, or backup requests.",
+        {"source":{"type":"string"},"destination":{"type":"string"}},["source","destination"]
+    )
+    web_tool=_benchmark_tool(
+        "web_search","Search the web for current or externally verifiable information.",
+        {"query":{"type":"string"}},["query"]
+    )
+
+    checks=[]
+    tool_errors=[]
+    tests=[
+        (
+            "read",
+            "Read README.txt before answering what this project is.",
+            [read_tool],
+            lambda name,args: name=="read_file" and str(args.get("path","")).endswith("README.txt"),
+        ),
+        (
+            "copy",
+            "Copy alpha.txt to alpha-copy.txt. Do not rewrite the file.",
+            [copy_tool,read_tool],
+            lambda name,args: (
+                name=="copy_path"
+                and str(args.get("source","")).endswith("alpha.txt")
+                and str(args.get("destination","")).endswith("alpha-copy.txt")
+            ),
+        ),
+        (
+            "web",
+            "What is the latest Ollama release? Use current information.",
+            [web_tool],
+            lambda name,args: name=="web_search" and bool(str(args.get("query","")).strip()),
+        ),
+    ]
+    for label,prompt,tools,judge in tests:
+        try:
+            response=_benchmark_chat(base,model,prompt,tools)
+            name,args=_tool_call(response)
+            passed=bool(judge(name,args))
+            results[label]=passed
+            checks.append(passed)
+        except Exception as exc:
+            results[label]=False
+            checks.append(False)
+            tool_errors.append(f"{label}: {exc}")
+
+    results["tools"]=sum(checks)
+    if tool_errors:
+        results["tool_error"]="; ".join(tool_errors)
+    return results
+
+
+def ollama_test(all_models=False):
+    base=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434").rstrip("/")
+    running=_ensure_ollama_server(base, allow_start=True)
+    if running is None:
+        print("LOOK OLLAMA · server unavailable")
+        return 1
+
+    disabled=_load_ollama_model_prefs()
+    if all_models:
+        try:
+            installed=_ollama_tags(base)
+        except Exception as exc:
+            print(f"LOOK OLLAMA · {exc}")
+            return 1
+        models=[(m.get("name") or m.get("model") or "").strip() for m in installed]
+        models=[m for m in models if m and m not in disabled]
+    else:
+        model,_=_choose_ollama_model(running)
+        models=[model]
+
+    if not models:
+        if all_models and disabled:
+            print("LOOK OLLAMA · no enabled models to test · use lk ollama models and X to enable one")
+        else:
+            print("LOOK OLLAMA · no models to test")
+        return 1
+
+    print("LOOK MODEL TEST")
+    print("  warm-model TTFT · generation rate · exact response · LOOK tool judgment")
+    if all_models and disabled:
+        print(f"  enabled models only · {len(disabled)} disabled")
+    print()
+
+    rows=[]
+    for model in models:
+        print(f"  testing {model} ...", flush=True)
+        try:
+            row=_benchmark_one_model(base, model)
+            rows.append(row)
+        except Exception as exc:
+            rows.append({"model":model,"fatal_error":str(exc)})
+        if all_models:
+            try:
+                _ollama_post(base, "/api/generate", {"model":model, "keep_alive":0}, timeout=30)
+            except Exception:
+                pass
+
+    print()
+    print(f"{'MODEL':<28} {'TTFT':>7} {'TOK/S':>8} {'TOOLS':>9} {'EXACT':>7}  CAPABILITIES")
+    print("-"*86)
+    for row in rows:
+        model=row["model"]
+        if row.get("fatal_error"):
+            print(f"{model:<28} {'—':>7} {'—':>8} {'error':>9} {'—':>7}  fatal")
+            print(f"  error · {row['fatal_error']}")
+            continue
+        if row.get("speed_error"):
+            caps=_model_capability_label(row.get("caps"))
+            print(f"{model:<28} {'error':>7} {'—':>8} {'—':>9} {'—':>7}  {caps}")
+            print(f"  speed error · {row['speed_error']}")
+            continue
+
+        tools=row.get("tools")
+        if tools is None:
+            tools_text="n/a"
+        else:
+            tools_text=f"{tools}/3"
+        caps=_model_capability_label(row.get("caps"))
+        print(
+            f"{model:<28} "
+            f"{row['ttft']:>6.2f}s "
+            f"{row['rate']:>8.1f} "
+            f"{tools_text:>9} "
+            f"{('yes' if row['exact'] else 'no'):>7}  "
+            f"{caps}"
+        )
+        if row.get("tool_error"):
+            print(f"  tool note · {row['tool_error']}")
+
+    good=[r for r in rows if "ttft" in r]
+    tool_good=[r for r in good if isinstance(r.get("tools"),int)]
+    if tool_good:
+        winner=max(tool_good, key=lambda r:(r["tools"], bool(r["exact"]), -r["ttft"], r["rate"]))
+        print(
+            f"\n  LOOK fit   {winner['model']} · tools {winner['tools']}/3 · "
+            f"{winner['ttft']:.2f}s TTFT · {winner['rate']:.1f} tok/s"
+        )
+    elif good:
+        winner=max(good,key=lambda r:(bool(r["exact"]),-r["ttft"],r["rate"]))
+        print(
+            f"\n  chat fit   {winner['model']} · {winner['ttft']:.2f}s TTFT · "
+            f"{winner['rate']:.1f} tok/s · tools unavailable"
+        )
+
+    # Restore the user's preferred model after a sweep.
+    if all_models:
+        preferred=_preferred_ollama_model()
+        try:
+            _ollama_set_model(base, preferred)
+            print(f"  restored   {preferred}")
+        except Exception:
+            pass
+    return 0
+
+
 def inspect_ollama():
     import json, urllib.request
     _title('ollama')
@@ -1612,10 +2084,13 @@ def inspect_ollama():
     base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
     try:
         with urllib.request.urlopen(base+'/api/ps',timeout=.8) as r: models=json.load(r).get('models',[])
-        print(f"  server  {_c('ready','32')} · {base}")
+        print(f"  server    {_c('ready','32')} · {base}")
+        print(f"  preferred {_preferred_ollama_model()}")
         if models:
-            for m in models[:6]: print(f"  model   {m.get('name') or m.get('model') or '?'}")
-        else: print(f"  model   {_c('idle','33')} · preferred {os.environ.get('LOOK_OLLAMA_MODEL','qwen3:8b')}")
+            names=[m.get('name') or m.get('model') or '?' for m in models[:6]]
+            print(f"  resident  {', '.join(names)}")
+        else:
+            print(f"  resident  {_c('idle','33')}")
     except Exception:
         print(f"  server  {_c('offline','33')} · {base}")
     print(f"  web     {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
@@ -1943,7 +2418,12 @@ def main():
     # `lk o` remains the chat verb. In v2, bare `lk ollama` is inspection;
     # adding search/a prompt keeps the historical long-form chat spelling useful.
     if len(sys.argv) >= 2 and (
-        sys.argv[1] == "o" or (sys.argv[1] == "ollama" and len(sys.argv) >= 3)
+        sys.argv[1] == "o"
+        or (
+            sys.argv[1] == "ollama"
+            and len(sys.argv) >= 3
+            and sys.argv[2] not in {"models","test"}
+        )
     ):
         args=sys.argv[2:]
         allow_start=True
@@ -2002,7 +2482,12 @@ def main():
     if cmd in {"machine","box"}: return inspect_machine()
     if cmd in {"net","network"}: return inspect_network()
     if cmd=="tailscale": return inspect_tailscale()
-    if cmd=="ollama": return inspect_ollama()
+    if cmd=="ollama":
+        if rest and rest[0]=="models":
+            return ollama_models(rest[1] if len(rest)>1 else None)
+        if rest and rest[0]=="test":
+            return ollama_test(all_models=("--all" in rest[1:]))
+        return inspect_ollama()
     if cmd=="env": return inspect_env()
     if cmd=="path": return inspect_path()
     if cmd=="gpu": return inspect_gpu()

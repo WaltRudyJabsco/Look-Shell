@@ -153,6 +153,9 @@ lk disk              disk usage
 lk net / network     local network + Tailscale identity
 lk tailscale         tailnet status
 lk ollama            Ollama server, model, and memory status
+lk ollama models     list/select installed models
+lk ollama test       benchmark the current model
+lk ollama test --all compare installed models
 lk env               useful environment
 lk path              PATH entries, duplicates, missing directories
 lk why COMMAND       explain command resolution and conflicts
@@ -222,6 +225,39 @@ ollama
   model   qwen3:8b
   memory  idle
 ```
+
+### Models and the LOOK benchmark
+
+LOOK leaves the Ollama server itself alone. Model switching happens inside the running server:
+
+``` text
+lk ollama models
+```
+
+In an interactive terminal this opens a tiny Ollama control panel. `Enter` selects and preloads a model; `X` toggles whether that model participates in LOOK's `test --all` sweep. Disabled models remain installed and can still be selected directly — LOOK is keeping a personal benchmark list, not policing Ollama.
+
+The list also shows Ollama-declared capabilities such as tools, thinking, and vision when the server reports them, plus resident and preferred state.
+
+You can also select directly:
+
+``` text
+lk ollama models qwen3:4b
+```
+
+LOOK remembers the selection as the preferred `lo` model. `lk ollama` distinguishes that preferred model from every model Ollama currently has resident, since other programs may keep their own models loaded.
+
+To compare responsiveness and terminal-assistant reliability:
+
+``` text
+lk ollama test
+lk ollama test --all
+```
+
+The benchmark measures a warm model's time to first token and generation rate, then checks the tool judgments LOOK actually depends on: choosing `read_file` for a read request, `copy_path` instead of reconstructing a copy, and `web_search` for current information. If Ollama explicitly reports that a model has no tool capability, LOOK skips those tool requests and records `n/a` instead of treating the model as broken. If tool support is declared or unknown, LOOK measures what the model actually does. `--all` tests only models enabled in the control panel and restores the preferred model afterward.
+
+This deliberately separates **declared capability** from **measured behavior**. A model can be an excellent fast chat model without qualifying as a full LOOK tool model.
+
+This is not a general intelligence benchmark. It answers the more useful LOOK question: **which model is fast enough to disappear into the terminal while remaining reliable at the work LOOK asks it to do?**
 
 ### Workspace awareness
 
