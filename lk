@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.1.8"
+VERSION="2.1.9"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -821,14 +821,29 @@ def _undo_last():
         else:
             raise RuntimeError("unknown undo record")
     except (OSError, RuntimeError) as exc:
-        print(f"LOOK undo · refused · {exc}")
+        print(f"{_c('✗','31')} LOOK undo · refused · {exc}")
         return 1
     entries.pop()
     _save_undo(entries)
-    print(f"UNDO · {kind}")
+    print(f"{_c('↶ UNDO','1;32')} · {kind}")
     print(f"  {detail}")
     return 0
 
+
+
+
+
+def _action_result(text):
+    """Color only the CLI presentation; tool/API text stays plain."""
+    if not sys.stdout.isatty():
+        return text
+    success_prefixes=("COPY OK","MOVE OK","REMOVE OK","MKDIR OK")
+    if text.startswith(success_prefixes):
+        head, sep, tail=text.partition(" · ")
+        return f"{_c('✓','32')} {_c(head,'1;32')}{sep}{tail}"
+    if any(word in text.lower() for word in ("failed","refused","mismatch")):
+        return f"{_c('✗','31')} {text}"
+    return text
 
 
 def _final_destination(src, requested):
@@ -1712,16 +1727,26 @@ def _model_capability_label(caps):
 
 def _ollama_model_rows(base, names, resident, disabled):
     rows=[]
+    preferred_name=_preferred_ollama_model()
     for name in names:
         caps=_ollama_capabilities(base,name)
         enabled=name not in disabled
-        state="✓" if enabled else "×"
-        live="●" if name in resident else " "
-        preferred="★" if name == _preferred_ollama_model() else " "
-        label=_model_capability_label(caps)
-        # Keep the raw name as field one. fzf displays fields 2.. so parsing
-        # never depends on decorative prefixes.
-        display=f"{state} {live}{preferred}  {name:<28} {label}"
+        state=_c("✓","32") if enabled else _c("×","2")
+        live=_c("●","32") if name in resident else " "
+        preferred=_c("★","33") if name == preferred_name else " "
+        padded=f"{name:<28}"
+        shown_name=_c(padded,"1") if name == preferred_name else padded
+        raw_label=_model_capability_label(caps)
+        if raw_label=="capabilities ?":
+            label=_c(raw_label,"2")
+        else:
+            parts=[]
+            for cap in raw_label.split(" · "):
+                code={"tools":"36","thinking":"35","vision":"33"}.get(cap,"2")
+                parts.append(_c(cap,code))
+            label=" · ".join(parts)
+        # Raw name stays in field one; display decoration never affects parsing.
+        display=f"{state} {live}{preferred}  {shown_name} {label}"
         rows.append((name,display,caps))
     return rows
 
@@ -1770,6 +1795,7 @@ def ollama_models(select_model=None):
                     "--no-multi",
                     "--delimiter","\t",
                     "--with-nth","2..",
+                    "--ansi",
                     "--expect","x,X,enter",
                 ],
                 input=payload, text=True, capture_output=True
@@ -1793,7 +1819,7 @@ def ollama_models(select_model=None):
     else:
         rows=_ollama_model_rows(base,names,resident,disabled)
         _title("ollama models")
-        print("  ✓ enabled for test --all · × disabled · ● resident · ★ preferred")
+        print(f"  {_c('✓','32')} enabled · {_c('×','2')} disabled · {_c('●','32')} resident · {_c('★','33')} preferred")
         for _,display,_ in rows:
             print(f"  {display}")
         return 0
@@ -2446,16 +2472,16 @@ def main():
     if cmd=="undo": return _undo_last()
     if cmd=="_copy":
         if len(rest)!=2: return 2
-        print(_journal_copy(rest[0],rest[1])); return 0
+        print(_action_result(_journal_copy(rest[0],rest[1]))); return 0
     if cmd=="_move":
         if len(rest)!=2: return 2
-        print(_journal_move(rest[0],rest[1])); return 0
+        print(_action_result(_journal_move(rest[0],rest[1]))); return 0
     if cmd=="_remove":
         if len(rest)!=1: return 2
-        print(_journal_remove(rest[0])); return 0
+        print(_action_result(_journal_remove(rest[0]))); return 0
     if cmd=="doctor": return doctor()
     if cmd=="config":
-        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {os.environ.get('LOOK_OLLAMA_MODEL', 'qwen3:8b')}")
+        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {_preferred_ollama_model()}\n  ollama models {OLLAMA_MODELS_FILE}")
         return 0
     if cmd=="secrets":
         p=HOME/".zsh_secrets"

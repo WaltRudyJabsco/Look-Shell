@@ -235,7 +235,7 @@ lrm() {
   src=$(_look_source "$@") || return
   print -P "%F{red}REMOVE%f  $src"
   read "answer?remove this path? [r/Enter cancels] › "
-  [[ "${answer:l}" == "r" ]] || { print "cancelled"; return 1; }
+  [[ "${answer:l}" == "r" ]] || { print -P "%F{242}· cancelled%f"; return 1; }
   lk _remove "$src"
 }
 
@@ -260,6 +260,7 @@ flightProgress() {
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
 # LOOK unified command
+alias lk='nocorrect lk'
 commands() { "$HOME/.local/bin/lk" help; }
 
 # LOOK Ollama — minimal on-demand chat; a resident model is reused when available.
