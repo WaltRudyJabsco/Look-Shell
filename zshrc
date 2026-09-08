@@ -197,6 +197,14 @@ flightProgress() {
   done
 }
 
+webterm() {
+  if ! lsof -iTCP:7681 -sTCP:LISTEN >/dev/null 2>&1; then
+    ttyd -W zsh >/tmp/ttyd.log 2>&1 &
+  fi
+
+  tailscale serve --https=8443 7681
+}
+
 # Optional helpers should never break shell startup.
 (( $+commands[thefuck] )) && eval "$(thefuck --alias)"
 [[ -f ~/.fzf.zsh ]] && source ~/.fzf.zsh
