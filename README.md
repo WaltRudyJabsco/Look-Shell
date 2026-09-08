@@ -15,8 +15,6 @@ terminal nicer to live in.
 
 ![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
 ## Install
 
 ``` sh
@@ -57,6 +55,7 @@ lk files           files only
 lk tree            recursive tree
 lk recent          newest first
 lk size            size-oriented view
+lk home            friendly terminal home snapshot
 lk doctor          environment and capability health
 lk config          installed paths and configuration
 lk secrets         secrets status, never contents
@@ -78,9 +77,14 @@ zll WORD           zoxide jump + smart view
 cdl WORD           zoxide jump + detail view
 fznv               fuzzy-find into Neovim
 f                  fuzzy helper
-rs                 reload shell
+lh                 LOOK home
+rs                 reset ritual
 commands           personal command reference
 ```
+
+### Home
+
+`lk home` (or `lh`) clears to a small LOOK landing screen, shows the current folder, Git branch when present, lightweight Ollama status, and a cowsay fortune, then immediately returns to the normal shell prompt. It is a reset surface, not a dashboard or background process. `rs` remains the existing neofetch/fortune/cowsay reset ritual.
 
 `l WORD` is smart navigation. If `WORD` names an explicit directory,
 LOOK enters it directly; otherwise zoxide resolves it from your
@@ -309,3 +313,8 @@ Terminal polish: web links keep their complete literal URL visible for native te
 ### 1.0.7
 
 Fixes `lk help` startup after the 1.0.6 ANSI help-color pass by importing the regular-expression module used by the help formatter.
+
+
+### 1.0.8
+
+Adds `lk home` / `lh`: a lightweight terminal landing screen with current location, Git/Ollama status, and a cowsay fortune. It exits immediately back to the shell. Help and README are updated; existing `rs` behavior is unchanged.

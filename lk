@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="1.0.7"
+VERSION="1.0.8"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -124,6 +124,7 @@ FILES
   lk size [PATH]       size-oriented
 
 SYSTEM
+  lk home              reset to a friendly LOOK home screen
   lk doctor            check the environment
   lk config            show installed paths
   lk secrets           secrets status (never contents)
@@ -139,7 +140,8 @@ SHORTCUTS
   lz       sizes             zll WORD jump + look
   cdl WORD jump + details    fznv     fuzzy edit
   f        fuzzy open        rs       reset ritual
-  lo       Ollama chat        lo ASK     ask immediately
+  lh       LOOK home         lo       Ollama chat
+  lo ASK   ask immediately
 
 LIVE FILTER / SELECTION
   Enter      filter / open file / enter folder
@@ -160,6 +162,76 @@ HELP PAGER
   q / Esc    quit
 """
     return _page_text(_help_color(body))
+
+
+def home():
+    """Paint a small, friendly LOOK landing screen, then return to the shell."""
+    import urllib.request
+
+    tty_out = sys.stdout.isatty()
+    if tty_out:
+        # Clear + home cursor. Unlike a dashboard, HOME immediately returns.
+        sys.stdout.write("\033[2J\033[H")
+
+    cyan="\033[36m" if tty_out else ""
+    magenta="\033[35m" if tty_out else ""
+    green="\033[32m" if tty_out else ""
+    dim="\033[2m" if tty_out else ""
+    bold="\033[1m" if tty_out else ""
+    reset="\033[0m" if tty_out else ""
+
+    cwd=Path.cwd()
+    try:
+        shown='~/' + str(cwd.relative_to(HOME)) if cwd != HOME else '~'
+    except ValueError:
+        shown=str(cwd)
+
+    branch=''
+    try:
+        result=subprocess.run(
+            ['git','branch','--show-current'], cwd=cwd,
+            capture_output=True, text=True, timeout=0.5
+        )
+        if result.returncode == 0:
+            branch=result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
+    ollama='offline'
+    try:
+        with urllib.request.urlopen(base + '/api/ps', timeout=0.45) as response:
+            import json
+            models=json.load(response).get('models',[])
+        if models:
+            name=models[0].get('name') or models[0].get('model') or 'ready'
+            ollama=name
+        else:
+            ollama='ready · idle'
+    except Exception:
+        if shutil.which('ollama'):
+            ollama='available · idle'
+
+    print(f"{cyan}{bold}LOOK {VERSION}{reset}")
+    print(f"{cyan}◆{reset} {shown}" + (f"  {dim}· git {branch}{reset}" if branch else ''))
+    print(f"{magenta}lo{reset} {ollama}")
+    print()
+
+    fortune=shutil.which('fortune')
+    cowsay=shutil.which('cowsay')
+    if fortune and cowsay:
+        try:
+            quote=subprocess.run([fortune], capture_output=True, text=True, timeout=1).stdout
+            cow=subprocess.run([cowsay,'-r'], input=quote, capture_output=True, text=True, timeout=1).stdout
+            if cow.strip():
+                print(cow.rstrip())
+                print()
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    print(f"{dim}What file do you want? What question do you have?{reset}")
+    print(f"{dim}l files · lo ask · lk help · lh home{reset}")
+    return 0
 
 def doctor():
     import json
@@ -932,6 +1004,7 @@ def main():
     modes={"detail":"detail","dirs":"dirs","files":"files","tree":"tree","recent":"recent","size":"size"}
     if cmd in ("help","-h","--help"): return help_screen()
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
+    if cmd=="home": return home()
     if cmd=="doctor": return doctor()
     if cmd=="config":
         print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  ollama model {os.environ.get('LOOK_OLLAMA_MODEL', 'qwen3:8b')}")

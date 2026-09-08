@@ -124,6 +124,7 @@ lf()  { _look "${1:-.}" --mode files --interactive; }
 lt()  { _look "${1:-.}" --mode tree --depth 3 --interactive; }
 lr()  { _look "${1:-.}" --mode recent --interactive; }
 lz()  { _look "${1:-.}" --mode size --interactive; }
+lh()  { _look home; }
 
 # Keep your old names too: muscle memory is an API.
 lsd() { ld "$@"; }

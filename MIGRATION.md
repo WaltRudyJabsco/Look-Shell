@@ -26,3 +26,10 @@ A surgical Ollama-interface polish release.
 
 - Fixes `lk help` `NameError: re is not defined` introduced by the 1.0.6 help-color formatter.
 - No behavior changes beyond this fix.
+
+
+## 1.0.8
+
+- Adds `lk home` and the `lh` shortcut.
+- HOME paints a clean LOOK landing screen, current folder, optional Git branch, lightweight Ollama status, and a cowsay fortune, then returns to the shell.
+- `rs`, filesystem behavior, Ollama chat, memory, and installer behavior are unchanged.
