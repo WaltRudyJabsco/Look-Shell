@@ -11,9 +11,9 @@ normal Unix shell remains intact underneath it.
 It isn't trying to replace the terminal. It's trying to make the
 terminal nicer to live in.
 
-![LOOK Shell doctor](screenshots/LOOK_2_Shell_doctor.png)
+![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_Shell_help.png)
+![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
 
 ![LOOK Shell help](screenshots/LOOK_Shell_filter_find.png)
 
