@@ -72,3 +72,27 @@ Compatibility note: `lo` and `lk o` remain the Ollama chat interface. Bare `lk o
 - `write_file` is now explicitly reserved for intentional UTF-8 text creation/editing and should never be used to duplicate an existing file.
 - Move/remove/mkdir stay inside the starting LOOK workspace; removal requires an explicit user request.
 - No arbitrary shell execution was added.
+
+## 2.1.3
+
+- Adds `lk undo` for LOOK filesystem mutations.
+- Copy, move/rename, remove, and mkdir record a small bounded transaction journal.
+- Remove is recoverable through LOOK's private undo store.
+- Undo refuses unsafe reversals; ordinary Unix commands are not tracked.
+- Keeps the latest 20 LOOK transactions.
+
+## 2.1.4
+
+- Fixes `lk undo` for `lcp`, `lmv`, `lrm`, and interactive `lk FILE` mutations by routing every LOOK-owned local mutation through the same journal.
+- `lo`, shell verbs, and file-card actions now share one transaction engine.
+- Removal confirmation is simplified to `r` + Enter; Enter alone cancels.
+- `lscp` remains outside undo because remote filesystem changes cannot be safely reversed locally.
+
+## 2.1.5
+
+- Moves `lo` persistent-memory compression off the interactive critical path.
+- Each completed exchange is durably queued; one detached worker remembers queued exchanges serially and exits when idle.
+- Leaving `lo` no longer cancels remembering.
+- `lk ollama` reports `memory remembering`, queued work, or idle.
+- Memory writes remain atomic; no daemon, service, or new dependency is added.
+

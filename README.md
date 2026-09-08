@@ -13,9 +13,7 @@ terminal nicer to live in.
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
-
-![LOOK Shell help](screenshots/LOOK_Shell_filter_find.png)
+![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
 ## Install
 
@@ -231,6 +229,23 @@ LOOK.
 
 ### Workspace awareness
 
+
+
+
+### One undo path
+
+All LOOK-owned local file mutations now share the same transaction journal: `lo` filesystem tools, `lcp` / `lmv` / `lrm`, and the interactive `lk FILE` card. `lk undo` therefore reverses the last LOOK copy, move/rename, remove, or mkdir regardless of which LOOK interface performed it. `lrm` and the file card use a simple `r` + Enter confirmation; empty Enter cancels.
+
+### Undo
+
+LOOK filesystem actions are reversible with `lk undo`. Copies, moves/renames, removals, and directory creation record a small LOOK transaction. Removal is recoverable: the item moves into LOOK's private undo store rather than being immediately destroyed. Undo refuses if reversal would overwrite or destroy changed filesystem state. LOOK keeps the most recent 20 transactions.
+
+
+### Background memory
+
+`lo` no longer blocks the prompt while compressing persistent memory. After an answer, the exchange is durably queued and a single detached LOOK worker performs remembering in the background. You can keep chatting or leave `lo` immediately; the worker survives the conversation and drains queued exchanges serially.
+
+`lk ollama` reports `memory  remembering` while the worker is active. No daemon is installed: the worker exits when the queue is empty.
 
 ### LO filesystem operations
 

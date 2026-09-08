@@ -205,7 +205,7 @@ lmv() {
   print -P "%F{cyan}MOVE%f  $src"
   read "dest?to › "
   [[ -n "$dest" ]] || return
-  command mv -i -- "$src" "$dest"
+  lk _move "$src" "$dest"
 }
 
 lcp() {
@@ -214,11 +214,7 @@ lcp() {
   print -P "%F{cyan}COPY%f  $src"
   read "dest?to › "
   [[ -n "$dest" ]] || return
-  if [[ -d "$src" ]]; then
-    command cp -Ri -- "$src" "$dest"
-  else
-    command cp -i -- "$src" "$dest"
-  fi
+  lk _copy "$src" "$dest"
 }
 
 lscp() {
@@ -238,13 +234,9 @@ lrm() {
   local src answer
   src=$(_look_source "$@") || return
   print -P "%F{red}REMOVE%f  $src"
-  read "answer?type REMOVE to confirm › "
-  [[ "$answer" == "REMOVE" ]] || { print "cancelled"; return 1; }
-  if [[ -d "$src" ]]; then
-    command rm -r -- "$src"
-  else
-    command rm -- "$src"
-  fi
+  read "answer?remove this path? [r/Enter cancels] › "
+  [[ "${answer:l}" == "r" ]] || { print "cancelled"; return 1; }
+  lk _remove "$src"
 }
 
 # ── Personal tools / projects ────────────────────────────────────────────────

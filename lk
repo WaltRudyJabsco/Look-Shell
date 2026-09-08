@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib
+import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.1.2"
+VERSION="2.1.5"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
 STATE_DIR=HOME/".local"/"share"/"look"
 MEMORY_FILE=STATE_DIR/"ollama_memory.json"
+UNDO_FILE=STATE_DIR/"undo.json"
+UNDO_TRASH=STATE_DIR/"undo_trash"
+UNDO_LIMIT=20
+MEMORY_QUEUE=STATE_DIR/"memory_queue"
+MEMORY_WORKER_LOCK=STATE_DIR/"memory_worker.lock"
 RECENT_MEMORY_SLOTS=5
 
 def render(args):
@@ -162,7 +167,7 @@ FILE ACTIONS
   lmv [PATH]           LOOK-assisted move
   lcp [PATH]           LOOK-assisted copy
   lscp [PATH]          LOOK-assisted scp
-  lrm [PATH]           LOOK-assisted remove (confirmed)
+  lrm [PATH]\n  lk undo              undo the last LOOK filesystem action           LOOK-assisted remove (confirmed)
 
 SHORTCUTS
   l / ls   smart view        ll       details
@@ -472,6 +477,113 @@ def _remember_exchange(base, model, memory, user_text, assistant_text):
     return updated
 
 
+def _memory_job_files():
+    try:
+        return sorted(MEMORY_QUEUE.glob("*.json"))
+    except OSError:
+        return []
+
+
+def _memory_worker_active():
+    try:
+        pid=int(MEMORY_WORKER_LOCK.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        try:
+            MEMORY_WORKER_LOCK.unlink()
+        except OSError:
+            pass
+        return False
+
+
+def _start_memory_worker():
+    """Start one detached memory worker; duplicate launches exit harmlessly."""
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "_remember-worker"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except OSError:
+        pass
+
+
+def _queue_memory_exchange(base, model, user_text, assistant_text):
+    """Durably enqueue an exchange, then let detached housekeeping own compression."""
+    try:
+        MEMORY_QUEUE.mkdir(parents=True, exist_ok=True)
+        token=f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
+        tmp=MEMORY_QUEUE/(token+".tmp")
+        job=MEMORY_QUEUE/(token+".json")
+        payload={
+            "base":base,
+            "model":model,
+            "user":user_text[:12000],
+            "assistant":assistant_text[:16000],
+        }
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(job)
+        os.chmod(job, 0o600)
+        _start_memory_worker()
+        return True
+    except OSError:
+        return False
+
+
+def _memory_worker():
+    """Drain queued memory jobs serially, then exit. Safe across lo sessions."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Atomic lock creation gives us one worker without a daemon or dependency.
+    try:
+        fd=os.open(MEMORY_WORKER_LOCK, os.O_CREAT|os.O_EXCL|os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return 0
+    try:
+        os.write(fd, str(os.getpid()).encode())
+    finally:
+        os.close(fd)
+
+    try:
+        while True:
+            jobs=_memory_job_files()
+            if not jobs:
+                break
+
+            job_path=jobs[0]
+            try:
+                job=json.loads(job_path.read_text(encoding="utf-8"))
+                memory=_load_memory()
+                _remember_exchange(
+                    job.get("base","http://127.0.0.1:11434"),
+                    job.get("model",os.environ.get("LOOK_OLLAMA_MODEL","qwen3:8b")),
+                    memory,
+                    str(job.get("user","")),
+                    str(job.get("assistant","")),
+                )
+                job_path.unlink()
+            except Exception:
+                # Leave the job for a future worker rather than losing memory.
+                break
+    finally:
+        try:
+            MEMORY_WORKER_LOCK.unlink()
+        except OSError:
+            pass
+
+    # Close the tiny shutdown race: if a job arrived while we released the lock,
+    # launch one fresh worker to pick it up.
+    if _memory_job_files():
+        _start_memory_worker()
+    return 0
+
+
 
 def _safe_workspace_path(workspace, raw_path="."):
     """Resolve a path while keeping Ollama file tools inside the starting cwd."""
@@ -625,78 +737,206 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
-def _tool_copy_path(workspace, source, destination):
-    src=_safe_workspace_path(workspace, source)
-    dst=_safe_workspace_path(workspace, destination)
+
+def _load_undo():
+    try:
+        data=json.loads(UNDO_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError, json.JSONDecodeError):
+        return []
+
+
+def _save_undo(entries):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    UNDO_FILE.write_text(json.dumps(entries[-UNDO_LIMIT:], indent=2), encoding="utf-8")
+    try: os.chmod(UNDO_FILE, 0o600)
+    except OSError: pass
+
+
+def _record_undo(entry):
+    entries=_load_undo()
+    entries.append(entry)
+    dropped=entries[:-UNDO_LIMIT]
+    entries=entries[-UNDO_LIMIT:]
+    _save_undo(entries)
+    for old in dropped:
+        trash=old.get("trash")
+        if trash:
+            try:
+                p=Path(trash)
+                if p.is_dir(): shutil.rmtree(p)
+                elif p.exists(): p.unlink()
+            except OSError:
+                pass
+
+
+def _undo_last():
+    entries=_load_undo()
+    if not entries:
+        print("LOOK undo · nothing to undo")
+        return 1
+    entry=entries[-1]
+    kind=entry.get("kind")
+    try:
+        if kind=="copy":
+            dst=Path(entry["destination"])
+            if not dst.exists():
+                raise RuntimeError("copied destination no longer exists")
+            expected=entry.get("sha256")
+            if expected and dst.is_file() and _sha256_file(dst) != expected:
+                raise RuntimeError("copied file has changed; refusing to remove it")
+            if dst.is_dir(): shutil.rmtree(dst)
+            else: dst.unlink()
+            detail=f"removed copied {dst.name}"
+        elif kind=="move":
+            src=Path(entry["source"]); dst=Path(entry["destination"])
+            if not dst.exists():
+                raise RuntimeError("moved path no longer exists")
+            if src.exists():
+                raise RuntimeError("original location is occupied")
+            shutil.move(str(dst), str(src))
+            detail=f"{dst.name} → {src}"
+        elif kind=="remove":
+            original=Path(entry["source"]); trash=Path(entry["trash"])
+            if original.exists():
+                raise RuntimeError("original location is occupied")
+            if not trash.exists():
+                raise RuntimeError("recoverable item is no longer available")
+            original.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(trash), str(original))
+            detail=f"{original.name} restored"
+        elif kind=="mkdir":
+            path=Path(entry["path"])
+            if not path.exists():
+                raise RuntimeError("directory no longer exists")
+            if not path.is_dir() or any(path.iterdir()):
+                raise RuntimeError("directory is no longer empty; refusing to remove it")
+            path.rmdir()
+            detail=f"removed empty {path.name}/"
+        else:
+            raise RuntimeError("unknown undo record")
+    except (OSError, RuntimeError) as exc:
+        print(f"LOOK undo · refused · {exc}")
+        return 1
+    entries.pop()
+    _save_undo(entries)
+    print(f"UNDO · {kind}")
+    print(f"  {detail}")
+    return 0
+
+
+
+def _final_destination(src, requested):
+    requested=Path(requested).expanduser().resolve()
+    return requested/src.name if requested.exists() and requested.is_dir() else requested
+
+
+def _journal_copy(src, requested_destination):
+    src=Path(src).expanduser().resolve()
+    dst=_final_destination(src, requested_destination)
     if not src.exists():
-        return f"Copy failed: source not found: {source}"
+        return f"Copy failed: source not found: {src}"
     if dst.exists():
-        return f"Copy refused: destination already exists: {destination}"
+        return f"Copy refused: destination already exists: {dst}"
     if not dst.parent.exists() or not dst.parent.is_dir():
-        return f"Copy failed: destination parent does not exist: {dst.parent.relative_to(Path(workspace).resolve())}"
+        return f"Copy failed: destination parent does not exist: {dst.parent}"
     try:
         if src.is_dir():
-            shutil.copytree(src, dst, copy_function=shutil.copy2)
+            shutil.copytree(src,dst,copy_function=shutil.copy2)
             files=sum(1 for p in dst.rglob("*") if p.is_file())
-            return f"COPY OK · {src.relative_to(Path(workspace).resolve())} → {dst.relative_to(Path(workspace).resolve())} · directory · {files} files"
-        shutil.copy2(src, dst)
-        source_hash=_sha256_file(src)
-        destination_hash=_sha256_file(dst)
+            _record_undo({"kind":"copy","destination":str(dst),"time":time.time()})
+            return f"COPY OK · {src.name} → {dst} · directory · {files} files · undo available · lk undo"
+        shutil.copy2(src,dst)
+        source_hash=_sha256_file(src); destination_hash=_sha256_file(dst)
         if source_hash != destination_hash:
             try: dst.unlink()
             except OSError: pass
             return "Copy verification failed: SHA-256 mismatch; destination was removed."
-        return (
-            f"COPY OK · {src.relative_to(Path(workspace).resolve())} → "
-            f"{dst.relative_to(Path(workspace).resolve())} · {src.stat().st_size} bytes · SHA-256 verified identical"
-        )
+        _record_undo({"kind":"copy","destination":str(dst),"sha256":destination_hash,"time":time.time()})
+        return f"COPY OK · {src.name} → {dst} · {src.stat().st_size} bytes · SHA-256 verified identical · undo available · lk undo"
     except OSError as exc:
         return f"Copy failed: {exc}"
 
 
-def _tool_move_path(workspace, source, destination):
-    src=_safe_workspace_path(workspace, source)
-    dst=_safe_workspace_path(workspace, destination)
+def _journal_move(src, requested_destination):
+    src=Path(src).expanduser().resolve()
+    dst=_final_destination(src, requested_destination)
     if not src.exists():
-        return f"Move failed: source not found: {source}"
+        return f"Move failed: source not found: {src}"
     if dst.exists():
-        return f"Move refused: destination already exists: {destination}"
+        return f"Move refused: destination already exists: {dst}"
     if not dst.parent.exists() or not dst.parent.is_dir():
-        return f"Move failed: destination parent does not exist: {dst.parent.relative_to(Path(workspace).resolve())}"
+        return f"Move failed: destination parent does not exist: {dst.parent}"
     try:
-        shutil.move(str(src), str(dst))
-        return f"MOVE OK · {Path(source)} → {Path(destination)}"
+        shutil.move(str(src),str(dst))
+        _record_undo({"kind":"move","source":str(src),"destination":str(dst),"time":time.time()})
+        return f"MOVE OK · {src.name} → {dst} · undo available · lk undo"
     except OSError as exc:
         return f"Move failed: {exc}"
 
 
-def _tool_remove_path(workspace, path, confirmed=False):
-    target=_safe_workspace_path(workspace, path)
-    if not confirmed:
-        return "Remove refused: confirmed=true is required, and may be used only when the user explicitly asked to remove this path."
+def _journal_remove(path):
+    target=Path(path).expanduser().resolve()
     if not target.exists():
-        return f"Remove failed: not found: {path}"
-    if target == Path(workspace).resolve():
-        return "Remove refused: the LOOK workspace root cannot be removed."
+        return f"Remove failed: not found: {target}"
+    if target == Path(target.anchor):
+        return "Remove refused: filesystem root cannot be removed."
     try:
-        if target.is_dir():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
-        return f"REMOVE OK · {Path(path)}"
+        UNDO_TRASH.mkdir(parents=True,exist_ok=True)
+        token=f"{int(time.time()*1000)}-{uuid.uuid4().hex[:8]}"
+        stash=UNDO_TRASH/token
+        shutil.move(str(target),str(stash))
+        _record_undo({"kind":"remove","source":str(target),"trash":str(stash),"time":time.time()})
+        return f"REMOVE OK · {target.name} · recoverable · undo available · lk undo"
     except OSError as exc:
         return f"Remove failed: {exc}"
 
 
-def _tool_make_directory(workspace, path):
-    target=_safe_workspace_path(workspace, path)
+def _journal_mkdir(path):
+    target=Path(path).expanduser().resolve()
     if target.exists():
-        return f"Directory already exists: {path}" if target.is_dir() else f"Create directory failed: path exists as a file: {path}"
+        return f"Directory already exists: {target}" if target.is_dir() else f"Create directory failed: path exists as a file: {target}"
     try:
         target.mkdir()
-        return f"MKDIR OK · {Path(path)}"
+        _record_undo({"kind":"mkdir","path":str(target),"time":time.time()})
+        return f"MKDIR OK · {target} · undo available · lk undo"
     except OSError as exc:
         return f"Create directory failed: {exc}"
+
+
+def _tool_copy_path(workspace, source, destination):
+    src=_safe_workspace_path(workspace,source)
+    raw=Path(destination).expanduser()
+    requested=raw if raw.is_absolute() else Path(workspace).resolve()/raw
+    dst=_safe_workspace_path(workspace,str(requested))
+    # Existing directory destination is allowed, but the resulting child must also remain inside workspace.
+    final=_final_destination(src,dst)
+    _safe_workspace_path(workspace,str(final))
+    return _journal_copy(src,dst)
+
+
+def _tool_move_path(workspace, source, destination):
+    src=_safe_workspace_path(workspace,source)
+    raw=Path(destination).expanduser()
+    requested=raw if raw.is_absolute() else Path(workspace).resolve()/raw
+    dst=_safe_workspace_path(workspace,str(requested))
+    final=_final_destination(src,dst)
+    _safe_workspace_path(workspace,str(final))
+    return _journal_move(src,dst)
+
+
+def _tool_remove_path(workspace, path, confirmed=False):
+    target=_safe_workspace_path(workspace,path)
+    if not confirmed:
+        return "Remove refused: confirmed=true is required, and may be used only when the user explicitly asked to remove this path."
+    if target == Path(workspace).resolve():
+        return "Remove refused: the LOOK workspace root cannot be removed."
+    return _journal_remove(target)
+
+
+def _tool_make_directory(workspace, path):
+    target=_safe_workspace_path(workspace,path)
+    return _journal_mkdir(target)
 
 
 def _filesystem_tools():
@@ -1138,8 +1378,13 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
             answer = message.get("content", "").strip()
             messages.append({"role": "assistant", "content": answer})
             print("\n" + _ansi_label("lo ›", "35") + " " + _ollama_markup(answer) + "\n")
-            with _activity("remembering"):
-                memory = _remember_exchange(base, model, memory, prompt, answer)
+            if _queue_memory_exchange(base, model, prompt, answer):
+                if sys.stdout.isatty():
+                    print(_c("  · remembering in background", "2"))
+            else:
+                # If queueing ever fails, preserve memory rather than silently dropping it.
+                with _activity("remembering"):
+                    memory = _remember_exchange(base, model, memory, prompt, answer)
             break
 
 
@@ -1374,6 +1619,15 @@ def inspect_ollama():
     except Exception:
         print(f"  server  {_c('offline','33')} · {base}")
     print(f"  web     {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
+    pending=len(_memory_job_files())
+    if _memory_worker_active():
+        tail=f" · {pending} queued" if pending else ""
+        print(f"  memory  {_c('remembering','33')}{tail}")
+    elif pending:
+        print(f"  memory  {_c('queued','33')} · {pending} pending")
+        _start_memory_worker()
+    else:
+        print(f"  memory  {_c('idle','2')}")
     return 0
 
 
@@ -1544,7 +1798,7 @@ def _edit_file(path):
 
 
 def _mutate_file(path, action):
-    """Explicit file mutation from the file card; Unix remains the machinery."""
+    """Explicit file mutation from the file card; all local LOOK mutations share one undo journal."""
     p=Path(path)
     if action in {"move","copy","send"}:
         label={"move":"to","copy":"to","send":"to (host:path)"}[action]
@@ -1555,11 +1809,9 @@ def _mutate_file(path, action):
         if not dest:
             return
         if action=="move":
-            subprocess.call(["mv","-i","--",str(p),dest])
+            print(_journal_move(p,dest))
         elif action=="copy":
-            cmd=["cp","-i","--",str(p),dest]
-            if p.is_dir(): cmd=["cp","-Ri","--",str(p),dest]
-            subprocess.call(cmd)
+            print(_journal_copy(p,dest))
         else:
             cmd=["scp",str(p),dest]
             if p.is_dir(): cmd=["scp","-r",str(p),dest]
@@ -1567,12 +1819,12 @@ def _mutate_file(path, action):
         return
     if action=="remove":
         try:
-            answer=input(f"type REMOVE to delete {p.name} › ").strip()
+            answer=input(f"remove {p.name}? [r/Enter cancels] › ").strip().lower()
         except (EOFError,KeyboardInterrupt):
             return
-        if answer!="REMOVE":
+        if answer!="r":
             return
-        subprocess.call(["rm","-r" if p.is_dir() else "-f","--",str(p)])
+        print(_journal_remove(p))
 
 
 def _file_card_lines(p):
@@ -1706,13 +1958,24 @@ def main():
     a=sys.argv[1:]
     if not a: return render([])
     cmd=a[0]; rest=a[1:]
+    if cmd=="_remember-worker": return _memory_worker()
     modes={"detail":"detail","dirs":"dirs","files":"files","tree":"tree","recent":"recent","size":"size"}
     if cmd in ("help","-h","--help"): return help_screen()
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
     if cmd=="home": return home()
+    if cmd=="undo": return _undo_last()
+    if cmd=="_copy":
+        if len(rest)!=2: return 2
+        print(_journal_copy(rest[0],rest[1])); return 0
+    if cmd=="_move":
+        if len(rest)!=2: return 2
+        print(_journal_move(rest[0],rest[1])); return 0
+    if cmd=="_remove":
+        if len(rest)!=1: return 2
+        print(_journal_remove(rest[0])); return 0
     if cmd=="doctor": return doctor()
     if cmd=="config":
-        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  ollama model {os.environ.get('LOOK_OLLAMA_MODEL', 'qwen3:8b')}")
+        print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {os.environ.get('LOOK_OLLAMA_MODEL', 'qwen3:8b')}")
         return 0
     if cmd=="secrets":
         p=HOME/".zsh_secrets"
