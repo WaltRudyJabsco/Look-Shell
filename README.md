@@ -25,7 +25,7 @@ LOOK is simply opinionated about the things you do all the time: **inspect first
 
 ![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
 
-![LOOK Shell doctor](screenshots/LOOK_Shell_filter_file.png)
+![LOOK Shell doctor](screenshots/LOOK_Shell_filter_find.png)
 
 ## Install
 
