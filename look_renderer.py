@@ -485,7 +485,7 @@ def copy_path(path:Path)->bool:
     except (OSError,subprocess.CalledProcessError): return False
 
 
-def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,force_interactive=False)->None:
+def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,on_back=None,force_interactive=False)->None:
     # Interactive state machine: browse -> filter -> select.
     usable=max(3,height-2)
     if (len(rows)<=height-1 and not force_interactive) or not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -553,7 +553,7 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             elif query:
                 status=f'{CYAN}  filter: {query}{RESET}  {DIM}{last}/{len(current)} · Enter select · / edit · Esc clear · q quit{RESET}'
             else:
-                status=f'{DIM}  {last}/{len(current)}  Enter filter · space/pgdn next · b/pgup back · g/G ends · q quit{RESET}'
+                status=f'{DIM}  {last}/{len(current)}  Enter filter · space/pgdn next · b/pgup page · g/G ends' + (f' · Esc back' if on_back else '') + f' · q quit{RESET}'
             if notice:
                 status=f'{status}  {YELLOW}{notice}{RESET}'
                 notice=''
@@ -636,7 +636,8 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
 
             if selecting:
                 if key in {'q','Q','\x03'}: break
-                if key=='\x1b' or key.startswith('\x1b['): selecting=False; filtering=True; continue
+                if key=='\x1b': selecting=False; filtering=True; continue
+                if key.startswith('\x1b['): continue
                 if key in {'j','\x1b[B'} and matches: selected=(selected+1)%len(matches); continue
                 if key in {'k','\x1b[A'} and matches: selected=(selected-1)%len(matches); continue
                 picked=selected_path()
@@ -666,7 +667,11 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             if key in {'q','Q','\x03'}: break
             if key in {'\r','\n','/'}: filtering=True
             elif key=='\x1b':
-                if query: query=''; selecting=False; refresh_filter()
+                if query:
+                    query=''; selecting=False; refresh_filter()
+                elif on_back:
+                    on_back()
+                    return
             elif key in {' ','\x1b[6~'}:
                 if last>=len(current): break
                 top=min(max(0,len(current)-usable),top+usable)
@@ -691,21 +696,32 @@ def main():
     hidden=not args.no_hidden
 
     browsed_once=False
+    history:list[Path]=[]
     while True:
         if not target.is_dir():
             print(f'look: not a directory: {target}',file=sys.stderr); return 1
         sz=shutil.get_terminal_size((100,30))
         rows=build_view(target,args.mode,hidden,sz.columns,args.depth)
         browsed:Path|None=None
+        went_back=False
         def choose_dir(path:Path)->None:
             nonlocal browsed
             browsed=path
+        def choose_back()->None:
+            nonlocal went_back
+            went_back=True
         pager(rows,sz.lines,sz.columns,
               rebuild=lambda q,h=None,w=None: build_view(target,args.mode,hidden,w or sz.columns,args.depth,q,h),
               candidates=lambda q: matching_paths(target,args.mode,hidden,q,args.depth),
               on_browse=choose_dir,
+              on_back=choose_back if history else None,
               force_interactive=(args.interactive or browsed_once))
+        if went_back:
+            target=history.pop()
+            browsed_once=True
+            continue
         if browsed is None: return 0
+        history.append(target)
         target=browsed
         browsed_once=True
 
