@@ -247,6 +247,15 @@ available.
 
 ## LOOK 1.0
 
+### 1.0.6
+
+Teaches `lo` about its LOOK Shell interface and capabilities. The system context now explicitly describes the supported lightweight Markdown, current-workspace file tools, optional web search, and the boundaries on those capabilities. Markdown `http/https` links are emitted as OSC 8 terminal hyperlinks when supported, so labeled links can be clicked directly in terminals such as iTerm2. No model, memory, search, filesystem-tool, or navigation semantics changed.
+
+### 1.0.3
+
+Fixes Up/Down and PageUp/PageDown handling in the built-in `lk help` pager. Ollama chat output also gains restrained terminal-native ANSI styling: distinct heading levels, italic emphasis, code and links, plus different `you ›` and `lo ›` labels.
+
+
 **1.0 is the stable interface.** The 0.x releases were the development
 path that established the renderer, navigation model, live filtering,
 previews, installer, and Ollama integration. The README no longer
@@ -283,3 +292,18 @@ Lowercase characters remain available for filtering.
 LOOK stays intentionally small: Zsh handles navigation and composition,
 Python handles filesystem presentation, and the ordinary Unix tools
 remain underneath both.
+
+
+### 1.0.6
+
+Web-backed `lo` answers now preserve the exact URLs returned by search and emit complete Markdown links, preventing citation-looking labels with no real hyperlink target.
+
+
+### 1.0.6
+
+Terminal polish: web links keep their complete literal URL visible for native terminal detection/copy/open behavior, and `lk help` gains restrained ANSI semantic color. No runtime behavior changes.
+
+
+### 1.0.7
+
+Fixes `lk help` startup after the 1.0.6 ANSI help-color pass by importing the regular-expression module used by the help formatter.
