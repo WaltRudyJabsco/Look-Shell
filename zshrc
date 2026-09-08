@@ -182,6 +182,71 @@ f() {
   fi
 }
 
+
+# ── LOOK file actions ───────────────────────────────────────────────────────
+# Mutation stays explicit: LOOK selects/frames the intent, Unix does the work.
+_look_pick_path() {
+  local picked
+  picked=$(find . -mindepth 1 -maxdepth 1 -print 2>/dev/null | sed 's#^\./##' | fzf --prompt='LOOK › ') || return
+  [[ -n "$picked" ]] && print -r -- "$picked"
+}
+
+_look_source() {
+  if (( $# )); then
+    print -r -- "$1"
+  else
+    _look_pick_path
+  fi
+}
+
+lmv() {
+  local src dest
+  src=$(_look_source "$@") || return
+  print -P "%F{cyan}MOVE%f  $src"
+  read "dest?to › "
+  [[ -n "$dest" ]] || return
+  command mv -i -- "$src" "$dest"
+}
+
+lcp() {
+  local src dest
+  src=$(_look_source "$@") || return
+  print -P "%F{cyan}COPY%f  $src"
+  read "dest?to › "
+  [[ -n "$dest" ]] || return
+  if [[ -d "$src" ]]; then
+    command cp -Ri -- "$src" "$dest"
+  else
+    command cp -i -- "$src" "$dest"
+  fi
+}
+
+lscp() {
+  local src dest
+  src=$(_look_source "$@") || return
+  print -P "%F{cyan}SEND%f  $src"
+  read "dest?to (host:path) › "
+  [[ -n "$dest" ]] || return
+  if [[ -d "$src" ]]; then
+    command scp -r -- "$src" "$dest"
+  else
+    command scp -- "$src" "$dest"
+  fi
+}
+
+lrm() {
+  local src answer
+  src=$(_look_source "$@") || return
+  print -P "%F{red}REMOVE%f  $src"
+  read "answer?type REMOVE to confirm › "
+  [[ "$answer" == "REMOVE" ]] || { print "cancelled"; return 1; }
+  if [[ -d "$src" ]]; then
+    command rm -r -- "$src"
+  else
+    command rm -- "$src"
+  fi
+}
+
 # ── Personal tools / projects ────────────────────────────────────────────────
 alias trackflight='flightProgress'
 [[ "$OSTYPE" == darwin* ]] && alias love='/Applications/love.app/Contents/MacOS/love'
@@ -208,7 +273,6 @@ commands() { "$HOME/.local/bin/lk" help; }
 # LOOK Ollama — minimal on-demand chat; a resident model is reused when available.
 alias lo='lk o'
 
-
 webterm() {
   if ! lsof -iTCP:7681 -sTCP:LISTEN >/dev/null 2>&1; then
     ttyd -W zsh >/tmp/ttyd.log 2>&1 &
@@ -216,3 +280,4 @@ webterm() {
 
   tailscale serve --https=8443 7681
 }
+

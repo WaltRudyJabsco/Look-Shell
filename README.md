@@ -13,9 +13,7 @@ terminal nicer to live in.
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
+![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
 ## Install
 
@@ -50,9 +48,7 @@ lk machine           what machine am I on?
 lk net               how am I connected?
 ```
 
-This is inspection, not management. LOOK does not start services, kill
-processes, edit PATH, execute project actions, or replace the Unix tools
-it reads from.
+Inspection remains LOOK's default. File mutation is deliberately separated into explicit `l*` verbs that hand the work to ordinary Unix tools; LOOK still does not start services, kill processes, edit PATH, or execute project actions.
 
 ## Core commands
 
@@ -103,6 +99,23 @@ lh                 LOOK home
 rs                 reset ritual
 commands           LOOK help
 ```
+
+### File cards and explicit file actions
+
+`lk FILE` is now an interactive object card: metadata, a paged bounded text/source preview, first-page PDF text when `pdftotext` is available, and live file actions. The card stays open until you quit or explicitly print the path. Images/media retain rich `file` metadata and remain one Enter/open action away; LOOK does not require a terminal-specific graphics protocol.
+
+Inside the file card: `j/k` or arrows scroll, Space/`b` page, Enter opens, `E` edits, `Y` copies the path, `P` prints it, and `M/C/S/R` perform explicit move/copy/send/remove actions.
+
+Mutation stays outside `lk`:
+
+``` text
+lmv [PATH]    choose/move a file or directory with mv -i
+lcp [PATH]    choose/copy with cp -i (recursive for directories)
+lscp [PATH]   choose/send with scp
+lrm [PATH]    choose/remove; requires typing REMOVE
+```
+
+With no path, each command opens a tiny `fzf` selector for the current directory. With a path, it acts on that explicit path. LOOK gathers intent and confirmation; `mv`, `cp`, `scp`, and `rm` remain the machinery underneath. The original system commands are untouched.
 
 ### Inspection grammar
 

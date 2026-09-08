@@ -40,3 +40,26 @@ A surgical Ollama-interface polish release.
 LOOK now treats `lk` as a general inspection verb while preserving the 1.x filesystem interface. New read-only views include `run`, `up`/`ports`, `git`, `machine`/`box`, `gpu`, `net`/`network`, `tailscale`, `ollama`, `env`, `path`, and `why COMMAND`. A single unknown argument is conservatively classified as an existing path, port, executable command, or matching process.
 
 Compatibility note: `lo` and `lk o` remain the Ollama chat interface. Bare `lk ollama` is now the Ollama inspection view; `lk ollama search ...` and `lk ollama <prompt>` still enter chat.
+
+## 2.0.1
+
+- Packaging sync release for the canonical GitHub 2.0 files.
+- Preserves the user-added `webterm()` Zsh helper for ttyd + Tailscale Serve.
+- No LOOK runtime behavior changes from 2.0.0.
+
+## 2.1.0
+
+- `lk FILE` now shows a richer file card with bounded text/source preview and first-page PDF text when available.
+- Adds explicit LOOK-assisted file verbs: `lmv`, `lcp`, `lscp`, and `lrm`.
+- With no path, file verbs use a current-directory `fzf` picker; with a path they act directly.
+- Move/copy preserve Unix interactive collision handling; directory copies are recursive.
+- `lrm` requires typing `REMOVE` before calling Unix `rm`.
+- Existing `mv`, `cp`, `scp`, `rm`, filesystem views, inspection grammar, `lo`, `rs`, `webterm()`, and HOME remain unchanged.
+
+## 2.1.1
+
+- Fixes the 2.1.0 file-card interaction bug: `lk FILE` no longer prints a card and immediately returns to the shell.
+- File cards are now interactive and paged until `q`/Esc.
+- Live keys: Enter open, E edit, Y copy path, P print path, M move, C copy, S scp, R remove.
+- File mutation remains explicit; removal still requires typing `REMOVE`.
+- Directory LOOK behavior and all other 2.1.0 features are unchanged.

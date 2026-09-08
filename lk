@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.0.0"
+VERSION="2.1.1"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -87,7 +87,7 @@ def _help_color(body):
     if not sys.stdout.isatty():
         return body
     reset="\033[0m"; bold="\033[1m"; cyan="\033[36m"; magenta="\033[35m"; yellow="\033[33m"
-    section_names={"LOOK","INSPECT","SYSTEM","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
+    section_names={"LOOK","INSPECT","SYSTEM","FILE CARD","FILE ACTIONS","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
     out=[]
     for line in body.splitlines():
         stripped=line.strip()
@@ -117,6 +117,7 @@ def help_screen():
 LOOK
   lk [THING]           inspect a path, command, port, or process
   lk [PATH]            smart filesystem view
+  lk FILE              interactive file card + paged preview
   lk detail [PATH]     detailed view
   lk dirs [PATH]       directories
   lk files [PATH]      files
@@ -148,6 +149,20 @@ SYSTEM
   lk o [search] [ASK]  Ollama chat / optional first prompt
   lk o --no-start ...  never start a missing local server
   lk help              this glossary
+
+FILE CARD
+  j / k / ↑ / ↓       scroll preview
+  Space / b            page forward / back
+  Enter                 open
+  E / Y / P             edit / copy path / print path
+  M / C / S / R         move / copy / scp / remove
+  q / Esc               quit
+
+FILE ACTIONS
+  lmv [PATH]           LOOK-assisted move
+  lcp [PATH]           LOOK-assisted copy
+  lscp [PATH]          LOOK-assisted scp
+  lrm [PATH]           LOOK-assisted remove (confirmed)
 
 SHORTCUTS
   l / ls   smart view        ll       details
@@ -1322,26 +1337,213 @@ def inspect_process(term):
     return 0
 
 
-def inspect_file(path):
-    p=Path(path).expanduser().resolve()
-    _title(p.name, 'file')
-    try:
-        st=p.stat()
-        size=st.st_size
-        if size < 1024: shown=f"{size} B"
-        elif size < 1024**2: shown=f"{size/1024:.1f} KB"
-        elif size < 1024**3: shown=f"{size/1024**2:.1f} MB"
-        else: shown=f"{size/1024**3:.1f} GB"
-        print(f"  path    {p}")
-        print(f"  size    {shown}")
-        print(f"  mode    {oct(st.st_mode & 0o777)}")
-        print(f"  modified {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.st_mtime))}")
-    except OSError as exc:
-        print(f"  {_c('✗','31')} {exc}"); return 1
-    kind=_run_text(['file','-b',str(p)]) if shutil.which('file') else ''
-    if kind: print(f"  type    {kind}")
-    return 0
+def _human_size(size):
+    if size < 1024: return f"{size} B"
+    if size < 1024**2: return f"{size/1024:.1f} KB"
+    if size < 1024**3: return f"{size/1024**2:.1f} MB"
+    return f"{size/1024**3:.1f} GB"
 
+
+def _file_preview_lines(p, kind):
+    """Return a generous but bounded preview for the interactive file card."""
+    suffix=p.suffix.lower()
+    textish = (
+        kind.startswith('ASCII') or 'text' in kind.lower() or 'script' in kind.lower()
+        or suffix in {'.md','.txt','.py','.js','.ts','.tsx','.jsx','.json','.toml','.yaml','.yml',
+                      '.html','.css','.sh','.zsh','.c','.h','.cpp','.rs','.go','.lua','.sql','.csv'}
+    )
+    if textish and p.stat().st_size <= 2_000_000:
+        try:
+            lines=p.read_text(encoding='utf-8',errors='replace').splitlines()
+            return ["", "  PREVIEW"] + ["  "+line[:220] for line in lines[:400]] + (
+                [f"  … {len(lines)-400} more lines"] if len(lines)>400 else []
+            )
+        except OSError:
+            return []
+    if suffix=='.pdf' and shutil.which('pdftotext'):
+        try:
+            r=subprocess.run(['pdftotext','-f','1','-l','3','-layout',str(p),'-'],
+                             capture_output=True,text=True,timeout=3)
+            lines=[x.rstrip() for x in r.stdout.splitlines() if x.strip()]
+            if lines:
+                return ["", "  PDF PREVIEW"] + ["  "+line[:220] for line in lines[:250]]
+        except (OSError,subprocess.SubprocessError):
+            pass
+    return []
+
+
+def _copy_path(path):
+    value=str(path)
+    try:
+        if platform.system()=="Darwin" and shutil.which("pbcopy"):
+            subprocess.run(["pbcopy"],input=value,text=True,check=True)
+            return True
+        if shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"],input=value,text=True,check=True)
+            return True
+        if shutil.which("xclip"):
+            subprocess.run(["xclip","-selection","clipboard"],input=value,text=True,check=True)
+            return True
+    except (OSError,subprocess.SubprocessError):
+        pass
+    return False
+
+
+def _open_file(path, choose=False):
+    try:
+        if platform.system()=="Darwin":
+            if choose:
+                # `open -a` needs an app name; keep LOOK's card simple and use
+                # the default app here. The filesystem browser still provides
+                # the richer O/open-with chooser.
+                return subprocess.call(["open",str(path)])
+            return subprocess.call(["open",str(path)])
+        if shutil.which("xdg-open"):
+            subprocess.Popen(["xdg-open",str(path)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            return 0
+    except OSError:
+        pass
+    return 1
+
+
+def _edit_file(path):
+    editor=os.environ.get("EDITOR") or os.environ.get("VISUAL") or shutil.which("nvim") or shutil.which("vim")
+    if not editor:
+        print("LOOK: no editor found (set $EDITOR).")
+        return 1
+    try:
+        return subprocess.call([editor,str(path)])
+    except OSError as exc:
+        print(f"LOOK: editor failed: {exc}")
+        return 1
+
+
+def _mutate_file(path, action):
+    """Explicit file mutation from the file card; Unix remains the machinery."""
+    p=Path(path)
+    if action in {"move","copy","send"}:
+        label={"move":"to","copy":"to","send":"to (host:path)"}[action]
+        try:
+            dest=input(f"{label} › ").strip()
+        except (EOFError,KeyboardInterrupt):
+            return
+        if not dest:
+            return
+        if action=="move":
+            subprocess.call(["mv","-i","--",str(p),dest])
+        elif action=="copy":
+            cmd=["cp","-i","--",str(p),dest]
+            if p.is_dir(): cmd=["cp","-Ri","--",str(p),dest]
+            subprocess.call(cmd)
+        else:
+            cmd=["scp",str(p),dest]
+            if p.is_dir(): cmd=["scp","-r",str(p),dest]
+            subprocess.call(cmd)
+        return
+    if action=="remove":
+        try:
+            answer=input(f"type REMOVE to delete {p.name} › ").strip()
+        except (EOFError,KeyboardInterrupt):
+            return
+        if answer!="REMOVE":
+            return
+        subprocess.call(["rm","-r" if p.is_dir() else "-f","--",str(p)])
+
+
+def _file_card_lines(p):
+    p=Path(p).expanduser().resolve()
+    st=p.stat()
+    kind=_run_text(['file','-b',str(p)]) if shutil.which('file') else ''
+    lines=[
+        f"{p.name} · file",
+        "",
+        f"  path     {p}",
+        f"  size     {_human_size(st.st_size)}",
+        f"  mode     {oct(st.st_mode & 0o777)}",
+        f"  modified {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.st_mtime))}",
+    ]
+    if kind:
+        lines.append(f"  type     {kind}")
+    lines += _file_preview_lines(p,kind)
+    return lines
+
+
+def inspect_file(path):
+    """Interactive file card: inspect first, act only on explicit keypress."""
+    p=Path(path).expanduser().resolve()
+    try:
+        lines=_file_card_lines(p)
+    except OSError as exc:
+        print(f"LOOK · {p.name}\n  {_c('✗','31')} {exc}")
+        return 1
+
+    # Non-interactive output stays composable.
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("\n".join(lines))
+        return 0
+
+    fd=sys.stdin.fileno()
+    old=termios.tcgetattr(fd)
+    top=0
+    try:
+        tty.setcbreak(fd)
+        while True:
+            height=max(8,shutil.get_terminal_size((90,28)).lines)
+            page_size=max(3,height-3)
+            max_top=max(0,len(lines)-page_size)
+            os.system("clear")
+            visible=lines[top:top+page_size]
+            print("\n".join(visible))
+            if len(lines)>page_size:
+                print(_c(f"{min(top+page_size,len(lines))}/{len(lines)} · j/k ↑/↓ · Space/b page", "2"))
+            print(
+                f"{_c('Enter','36')} open  {_c('E','36')} edit  {_c('Y','36')} copy path  "
+                f"{_c('P','36')} print path  {_c('M','36')} move  {_c('C','36')} copy  "
+                f"{_c('S','36')} send  {_c('R','31')} remove  {_c('q','2')} quit"
+            )
+            sys.stdout.flush()
+
+            ch=os.read(fd,1)
+            key=ch.decode("utf-8","ignore")
+            if ch==b"\x1b":
+                seq=bytearray(ch)
+                while len(seq)<6:
+                    ready,_,_=select.select([fd],[],[],0.08)
+                    if not ready: break
+                    seq.extend(os.read(fd,1))
+                    if seq[-1:] in b"~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz": break
+                key={b"\x1b[A":"up",b"\x1b[B":"down",b"\x1b[5~":"pageup",b"\x1b[6~":"pagedown"}.get(bytes(seq),"esc")
+
+            if key in {"q","esc"}: break
+            if key in {"j","down"}: top=min(max_top,top+1); continue
+            if key in {"k","up"}: top=max(0,top-1); continue
+            if key in {" ","pagedown"}: top=min(max_top,top+page_size); continue
+            if key in {"b","pageup"}: top=max(0,top-page_size); continue
+
+            # Restore cooked mode while an external app/prompt owns the terminal.
+            termios.tcsetattr(fd,termios.TCSADRAIN,old)
+            if key in {"\r","\n"}: _open_file(p)
+            elif key=="E": _edit_file(p)
+            elif key=="Y":
+                print("copied" if _copy_path(p) else str(p))
+                input("press Enter › ")
+            elif key=="P":
+                print(str(p))
+                return 0
+            elif key=="M":
+                _mutate_file(p,"move")
+                if not p.exists(): return 0
+            elif key=="C": _mutate_file(p,"copy")
+            elif key=="S": _mutate_file(p,"send")
+            elif key=="R":
+                _mutate_file(p,"remove")
+                if not p.exists(): return 0
+            old=termios.tcgetattr(fd)
+            tty.setcbreak(fd)
+    finally:
+        try: termios.tcsetattr(fd,termios.TCSADRAIN,old)
+        except Exception: pass
+    return 0
 
 def inspect_anything(term):
     """Human-first classification for `lk <anything>`. Paths always win."""
