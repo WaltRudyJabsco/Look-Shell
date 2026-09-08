@@ -63,3 +63,12 @@ Compatibility note: `lo` and `lk o` remain the Ollama chat interface. Bare `lk o
 - Live keys: Enter open, E edit, Y copy path, P print path, M move, C copy, S scp, R remove.
 - File mutation remains explicit; removal still requires typing `REMOVE`.
 - Directory LOOK behavior and all other 2.1.0 features are unchanged.
+
+## 2.1.2
+
+- Adds bounded `copy_path`, `move_path`, `remove_path`, and `make_directory` tools to `lo`.
+- `copy_path` uses filesystem copy semantics rather than model-mediated read/write reconstruction.
+- File copies are SHA-256 verified before success is reported.
+- `write_file` is now explicitly reserved for intentional UTF-8 text creation/editing and should never be used to duplicate an existing file.
+- Move/remove/mkdir stay inside the starting LOOK workspace; removal requires an explicit user request.
+- No arbitrary shell execution was added.

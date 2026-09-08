@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time
+import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.1.1"
+VERSION="2.1.2"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -616,6 +616,89 @@ def _tool_write_file(workspace, path, content, overwrite=False):
         return f"Write failed: {exc}"
 
 
+
+def _sha256_file(path):
+    digest=hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024*1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _tool_copy_path(workspace, source, destination):
+    src=_safe_workspace_path(workspace, source)
+    dst=_safe_workspace_path(workspace, destination)
+    if not src.exists():
+        return f"Copy failed: source not found: {source}"
+    if dst.exists():
+        return f"Copy refused: destination already exists: {destination}"
+    if not dst.parent.exists() or not dst.parent.is_dir():
+        return f"Copy failed: destination parent does not exist: {dst.parent.relative_to(Path(workspace).resolve())}"
+    try:
+        if src.is_dir():
+            shutil.copytree(src, dst, copy_function=shutil.copy2)
+            files=sum(1 for p in dst.rglob("*") if p.is_file())
+            return f"COPY OK · {src.relative_to(Path(workspace).resolve())} → {dst.relative_to(Path(workspace).resolve())} · directory · {files} files"
+        shutil.copy2(src, dst)
+        source_hash=_sha256_file(src)
+        destination_hash=_sha256_file(dst)
+        if source_hash != destination_hash:
+            try: dst.unlink()
+            except OSError: pass
+            return "Copy verification failed: SHA-256 mismatch; destination was removed."
+        return (
+            f"COPY OK · {src.relative_to(Path(workspace).resolve())} → "
+            f"{dst.relative_to(Path(workspace).resolve())} · {src.stat().st_size} bytes · SHA-256 verified identical"
+        )
+    except OSError as exc:
+        return f"Copy failed: {exc}"
+
+
+def _tool_move_path(workspace, source, destination):
+    src=_safe_workspace_path(workspace, source)
+    dst=_safe_workspace_path(workspace, destination)
+    if not src.exists():
+        return f"Move failed: source not found: {source}"
+    if dst.exists():
+        return f"Move refused: destination already exists: {destination}"
+    if not dst.parent.exists() or not dst.parent.is_dir():
+        return f"Move failed: destination parent does not exist: {dst.parent.relative_to(Path(workspace).resolve())}"
+    try:
+        shutil.move(str(src), str(dst))
+        return f"MOVE OK · {Path(source)} → {Path(destination)}"
+    except OSError as exc:
+        return f"Move failed: {exc}"
+
+
+def _tool_remove_path(workspace, path, confirmed=False):
+    target=_safe_workspace_path(workspace, path)
+    if not confirmed:
+        return "Remove refused: confirmed=true is required, and may be used only when the user explicitly asked to remove this path."
+    if not target.exists():
+        return f"Remove failed: not found: {path}"
+    if target == Path(workspace).resolve():
+        return "Remove refused: the LOOK workspace root cannot be removed."
+    try:
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        return f"REMOVE OK · {Path(path)}"
+    except OSError as exc:
+        return f"Remove failed: {exc}"
+
+
+def _tool_make_directory(workspace, path):
+    target=_safe_workspace_path(workspace, path)
+    if target.exists():
+        return f"Directory already exists: {path}" if target.is_dir() else f"Create directory failed: path exists as a file: {path}"
+    try:
+        target.mkdir()
+        return f"MKDIR OK · {Path(path)}"
+    except OSError as exc:
+        return f"Create directory failed: {exc}"
+
+
 def _filesystem_tools():
     return [
         {"type":"function","function":{
@@ -643,12 +726,43 @@ def _filesystem_tools():
         }},
         {"type":"function","function":{
             "name":"write_file",
-            "description":"Create a UTF-8 text file inside the current LOOK workspace. Use only when the user explicitly asks to create or write a file. Existing files are protected unless overwrite=true and replacement was explicitly requested.",
+            "description":"Create or intentionally replace UTF-8 text content inside the current LOOK workspace. Never use write_file to copy, duplicate, clone, back up, move, or rename an existing path; use copy_path or move_path instead. Existing files are protected unless overwrite=true and replacement was explicitly requested.",
             "parameters":{"type":"object","properties":{
                 "path":{"type":"string"},
                 "content":{"type":"string"},
                 "overwrite":{"type":"boolean"}
             },"required":["path","content"]}
+        }},
+        {"type":"function","function":{
+            "name":"copy_path",
+            "description":"Copy an existing file or directory exactly inside the LOOK workspace. Use this whenever the user asks to copy, duplicate, clone, or back up an existing path. Never simulate a copy with read_file + write_file. File copies are SHA-256 verified.",
+            "parameters":{"type":"object","properties":{
+                "source":{"type":"string"},
+                "destination":{"type":"string"}
+            },"required":["source","destination"]}
+        }},
+        {"type":"function","function":{
+            "name":"move_path",
+            "description":"Move or rename an existing file or directory inside the LOOK workspace. Use this whenever the user asks to move or rename an existing path. Do not recreate the content with write_file.",
+            "parameters":{"type":"object","properties":{
+                "source":{"type":"string"},
+                "destination":{"type":"string"}
+            },"required":["source","destination"]}
+        }},
+        {"type":"function","function":{
+            "name":"remove_path",
+            "description":"Remove an existing file or directory inside the LOOK workspace. Use only when the user explicitly asks to delete/remove it. Set confirmed=true only for that explicit user request.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string"},
+                "confirmed":{"type":"boolean","description":"Must be true, and only when the user explicitly requested removal."}
+            },"required":["path","confirmed"]}
+        }},
+        {"type":"function","function":{
+            "name":"make_directory",
+            "description":"Create one directory inside the LOOK workspace when the user explicitly asks for it.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string"}
+            },"required":["path"]}
         }}
     ]
 
@@ -663,6 +777,14 @@ def _run_filesystem_tool(workspace, name, args):
             return _tool_search_files(workspace, args.get("query", ""), args.get("path", "."))
         if name == "write_file":
             return _tool_write_file(workspace, args.get("path", ""), args.get("content", ""), bool(args.get("overwrite", False)))
+        if name == "copy_path":
+            return _tool_copy_path(workspace, args.get("source", ""), args.get("destination", ""))
+        if name == "move_path":
+            return _tool_move_path(workspace, args.get("source", ""), args.get("destination", ""))
+        if name == "remove_path":
+            return _tool_remove_path(workspace, args.get("path", ""), bool(args.get("confirmed", False)))
+        if name == "make_directory":
+            return _tool_make_directory(workspace, args.get("path", ""))
     except (OSError, ValueError) as exc:
         return f"File tool failed: {exc}"
     return f"Unknown file tool: {name}"
@@ -891,8 +1013,11 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
             "Do not over-format simple answers. "
             "When the user refers to 'this folder', 'here', local files, or the current project, "
             "use the workspace context and file tools instead of guessing. "
-            "You may list files, read bounded text files, search filenames/text, and create or modify UTF-8 text files "
-            "with the provided tools. Only write files when the user explicitly asks you to create or change one. "
+            "You may list files, read bounded text files, search filenames/text, create or intentionally modify UTF-8 text, "
+            "and use bounded copy_path, move_path, remove_path, and make_directory tools inside the workspace. "
+            "When the user asks to copy, duplicate, clone, or back up an existing path, ALWAYS use copy_path; never reconstruct it with read_file + write_file. "
+            "When the user asks to move or rename an existing path, use move_path. When explicitly asked to remove one, use remove_path. "
+            "Use write_file only for intentional textual creation or editing. Only mutate files when the user explicitly asks. "
             "Do not claim to have read or changed a file unless the corresponding tool supplied or confirmed it. "
             "Do not claim filesystem access outside the starting LOOK workspace. "
             "If web_search is available, use it when current or externally verifiable information is needed; "
@@ -996,9 +1121,9 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
                                 tool_content = _search_text(search_result)
                             except Exception as exc:
                                 tool_content = f"Web search failed: {exc}"
-                    elif name in {"list_files", "read_file", "search_files", "write_file"}:
+                    elif name in {"list_files", "read_file", "search_files", "write_file", "copy_path", "move_path", "remove_path", "make_directory"}:
                         tool_content = _run_filesystem_tool(workspace, name, args)
-                        if name == "write_file":
+                        if name in {"write_file", "copy_path", "move_path", "remove_path", "make_directory"}:
                             print(f"{_ansi_label('file ›', '32')} {tool_content}")
                     else:
                         tool_content = f"Unknown tool: {name}"

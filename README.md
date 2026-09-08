@@ -229,6 +229,21 @@ LOOK.
 
 ### Workspace awareness
 
+
+### LO filesystem operations
+
+`lo` now distinguishes text editing from filesystem operations. When you ask it to copy, move, rename, remove, or create a directory inside the current workspace, it has dedicated bounded tools instead of reconstructing files through the language model.
+
+``` text
+copy_path       exact file/directory copy; files are SHA-256 verified
+move_path       move or rename an existing path
+remove_path     explicit removal only
+make_directory  create a directory
+```
+
+`write_file` is for intentional UTF-8 text creation/editing only. It is explicitly not a copy mechanism. All of these tools remain restricted to the workspace where `lo` was started.
+
+
 `lo` knows the directory in which it was started and receives a bounded
 snapshot of that workspace. Tool-capable models can use a deliberately
 small filesystem toolset to:
