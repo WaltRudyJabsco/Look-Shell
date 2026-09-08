@@ -15,7 +15,7 @@ terminal nicer to live in.
 
 ![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
-![LOOK Shell filter](LOOK_Shell_filter_find.png)
+![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 ## Install
 
