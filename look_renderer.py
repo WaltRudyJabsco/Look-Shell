@@ -9,6 +9,7 @@ Install manually:
 Normally installed by the repository's ./install.sh.
 """
 from __future__ import annotations
+import json
 
 import argparse
 import os
@@ -600,9 +601,73 @@ def copy_path(path:Path)->bool:
     except (OSError,subprocess.CalledProcessError): return False
 
 
+def prompt_line(prompt:str)->tuple[str,bool]:
+    """Tiny line editor for LOOK action prompts. Esc cancels immediately."""
+    fd=sys.stdin.fileno()
+    old=termios.tcgetattr(fd)
+    chars:list[str]=[]
+    try:
+        tty.setcbreak(fd)
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        while True:
+            ch=os.read(fd,1)
+            if ch==b'\x1b':
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                return '',True
+            if ch in {b'\r',b'\n'}:
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                return ''.join(chars),False
+            if ch in {b'\x7f',b'\b'}:
+                if chars:
+                    chars.pop()
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+                continue
+            if ch==b'\x03':
+                raise KeyboardInterrupt
+            text=ch.decode('utf-8','ignore')
+            if text and text.isprintable():
+                chars.append(text)
+                sys.stdout.write(text)
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd,termios.TCSADRAIN,old)
+
+
+def copy_files_to_clipboard(paths:list[Path])->bool:
+    """Copy actual filesystem objects to the desktop clipboard."""
+    resolved=[p.resolve() for p in paths]
+    try:
+        if sys.platform=='darwin' and shutil.which('osascript'):
+            # Finder-style file clipboard, so Cmd-V pastes the objects themselves.
+            aliases=', '.join(
+                f'(POSIX file {json.dumps(str(p))}) as alias'
+                for p in resolved
+            )
+            script=f'set the clipboard to {{{aliases}}}'
+            subprocess.run(['osascript','-e',script],check=True,
+                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            return True
+
+        uris='\r\n'.join(p.as_uri() for p in resolved)+'\r\n'
+        if shutil.which('wl-copy'):
+            subprocess.run(['wl-copy','--type','text/uri-list'],input=uris,text=True,check=True)
+            return True
+        if shutil.which('xclip'):
+            subprocess.run(['xclip','-selection','clipboard','-t','text/uri-list'],
+                           input=uris,text=True,check=True)
+            return True
+    except (OSError,subprocess.SubprocessError):
+        pass
+    return False
+
+
 def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,on_back=None,on_go=None,force_interactive=False,initial_select:Path|None=None)->None:
     # Interactive state machine: browse -> filter -> select.
-    usable=max(3,height-2)
+    usable=max(3,height-3)
     if (len(rows)<=height-1 and not force_interactive) or not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('\n'.join(rows)); return
     top=0; query=''; filtering=False; selecting=False; selected=0
@@ -647,18 +712,27 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
         lk=Path(__file__).resolve().parent/'lk'
         if kind in {'copy','move'}:
             sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush()
-            try: dest=input(f"{kind.upper()} {len(paths)} item{'s' if len(paths)!=1 else ''} · to › ").strip()
-            except (EOFError,KeyboardInterrupt): dest=''
+            try:
+                dest,cancelled=prompt_line(
+                    f"{kind.upper()} {len(paths)} item{'s' if len(paths)!=1 else ''} · to › "
+                )
+            except KeyboardInterrupt:
+                dest=''; cancelled=True
             sys.stdout.write(HIDE); sys.stdout.flush()
-            if not dest:
+            dest=dest.strip()
+            if cancelled or not dest:
                 notice='cancelled'; return
             proc=subprocess.run([sys.executable,str(lk),'_batch',kind,dest,*map(str,paths)])
         elif kind=='remove':
             sys.stdout.write(SHOW+RESET+'\n'); sys.stdout.flush()
-            try: answer=input(f"REMOVE {len(paths)} item{'s' if len(paths)!=1 else ''}? [r/Enter cancels] › ").strip().lower()
-            except (EOFError,KeyboardInterrupt): answer=''
+            try:
+                answer,cancelled=prompt_line(
+                    f"REMOVE {len(paths)} item{'s' if len(paths)!=1 else ''}? [r confirms · Esc/Enter cancels] › "
+                )
+            except KeyboardInterrupt:
+                answer=''; cancelled=True
             sys.stdout.write(HIDE); sys.stdout.flush()
-            if answer!='r':
+            if cancelled or answer.strip().lower()!='r':
                 notice='cancelled'; return
             proc=subprocess.run([sys.executable,str(lk),'_batch','remove','--',*map(str,paths)])
         marked.clear()
@@ -699,28 +773,32 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             else:
                 sys.stdout.write('\n'.join(fit(r,width) for r in page))
             last=min(len(current),top+usable)
+            actions=''
             if filtering:
                 match_word='match' if len(matches)==1 else 'matches'
                 status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}█{RESET}'
-                        f'  {GRAY}{len(matches)} {match_word} · {len(marked)} marked{RESET}'
-                        f'  {FAINT}↑↓ / J K L ;  Tab mark  A all  C copy  M move  R remove  Y paths  G go  Enter open  Esc clear{RESET}')
+                        f'  {GRAY}{len(matches)} {match_word} · {len(marked)} marked{RESET}')
+                actions=(f'  {FAINT}J K L ; move · Tab mark · A all · Enter open · '
+                         f'C copy→ · B clipboard · M move · R remove · Y path · G go · Esc clear{RESET}')
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
-                status=(f'  {CYAN}{BOLD}SELECT{RESET} {WHITE}{name}{RESET} {GRAY}· {kind} · {len(marked)} marked{RESET}'
-                        f'  {FAINT}↑↓ choose  Space mark  C copy  M move  R remove  Y paths  G go  Enter open  Esc filter  q quit{RESET}')
+                status=(f'  {CYAN}{BOLD}SELECT{RESET} {WHITE}{name}{RESET} {GRAY}· {kind} · {len(marked)} marked{RESET}')
+                actions=(f'  {FAINT}J K L ; move · Tab mark · Enter open · '
+                         f'C copy→ · B clipboard · M move · R remove · Y path · G go · Esc filter · q quit{RESET}')
             elif query:
                 status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}{RESET}'
-                        f'  {GRAY}{last}/{len(current)}{RESET}'
-                        f'  {FAINT}Enter select  / edit  Esc clear  q quit{RESET}')
+                        f'  {GRAY}{last}/{len(current)}{RESET}')
+                actions=f'  {FAINT}Enter select · Esc clear · q quit{RESET}'
             else:
-                back_hint='  Esc back' if on_back else '  Esc exit'
-                status=(f'  {FAINT}{last}/{len(current)}{RESET}'
-                        f'  {GRAY}Enter filter  Space/PgDn next  b/PgUp page  g/G ends{back_hint}  q quit{RESET}')
+                back_hint='Esc back' if on_back else 'Esc exit'
+                status=f'  {FAINT}{last}/{len(current)}{RESET}'
+                actions=(f'  {GRAY}Enter filter · Space/PgDn next · b/PgUp back · '
+                         f'g/G ends · {back_hint} · q quit{RESET}')
             if notice:
                 status=f'{status}  {YELLOW}{notice}{RESET}'
                 notice=''
-            sys.stdout.write('\n'+fit(status,width)); sys.stdout.flush()
+            sys.stdout.write('\n'+fit(status,width)+'\n'+fit(actions,width)); sys.stdout.flush()
             if pending:
                 key,pending=pending,''
             else:
@@ -775,6 +853,10 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                 elif key in {'C','M','R'} and matches:
                     run_action({'C':'copy','M':'move','R':'remove'}[key])
                     refresh_filter()
+                elif key=='B' and matches:
+                    paths=action_paths()
+                    if paths:
+                        notice='copied file to clipboard' if copy_files_to_clipboard(paths) else 'file clipboard unavailable'
                 elif key=='Y' and matches:
                     paths=action_paths()
                     if paths:
@@ -852,6 +934,10 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                 if key in {'c','C','m','M','r','R'}:
                     run_action({'c':'copy','C':'copy','m':'move','M':'move','r':'remove','R':'remove'}[key])
                     refresh_filter(); continue
+                if key=='B':
+                    paths=action_paths()
+                    notice='copied file to clipboard' if paths and copy_files_to_clipboard(paths) else 'file clipboard unavailable'
+                    continue
                 if key in {'y','Y'}:
                     paths=action_paths()
                     value='\n'.join(str(x) for x in paths)
