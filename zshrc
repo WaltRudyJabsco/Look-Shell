@@ -88,7 +88,23 @@ _look() {
     print "Install look.py into ~/.local/bin/look.py and chmod +x it."
     return 127
   fi
+
+  local cd_request="$HOME/.local/share/look/cd_request"
+  command rm -f -- "$cd_request"
   "$LOOK" "$@"
+  local rc=$?
+
+  # Renderer subprocesses cannot change the parent shell directory. G writes
+  # one deliberate handoff; the shell consumes it immediately and deletes it.
+  if [[ -r "$cd_request" ]]; then
+    local target
+    target="$(<"$cd_request")"
+    command rm -f -- "$cd_request"
+    if [[ -n "$target" && -d "$target" ]]; then
+      builtin cd -- "$target" || return
+    fi
+  fi
+  return $rc
 }
 
 # Oh My Zsh may own some of these names; clear them before function parsing.
@@ -201,33 +217,54 @@ _look_source() {
 
 lmv() {
   local src dest
-  src=$(_look_source "$@") || return
-  print -P "%F{cyan}MOVE%f  $src"
-  read "dest?to › "
-  [[ -n "$dest" ]] || return
+  if (( $# >= 2 )); then
+    src="$1"; dest="$2"
+  else
+    src=$(_look_source "$@") || return
+    print -P "%F{cyan}MOVE%f  $src"
+    read "dest?to › "
+    [[ -n "$dest" ]] || return
+  fi
   lk _move "$src" "$dest"
 }
 
 lcp() {
   local src dest
-  src=$(_look_source "$@") || return
-  print -P "%F{cyan}COPY%f  $src"
-  read "dest?to › "
-  [[ -n "$dest" ]] || return
+  if (( $# >= 2 )); then
+    src="$1"; dest="$2"
+  else
+    src=$(_look_source "$@") || return
+    print -P "%F{cyan}COPY%f  $src"
+    read "dest?to [here] › "
+    [[ -n "$dest" ]] || dest="."
+  fi
   lk _copy "$src" "$dest"
 }
 
 lscp() {
   local src dest
-  src=$(_look_source "$@") || return
-  print -P "%F{cyan}SEND%f  $src"
-  read "dest?to (host:path) › "
-  [[ -n "$dest" ]] || return
+  if (( $# >= 2 )); then
+    src="$1"; dest="$2"
+  else
+    src=$(_look_source "$@") || return
+    print -P "%F{cyan}SEND%f  $src"
+    read "dest?to (host:path) › "
+    [[ -n "$dest" ]] || return
+  fi
   if [[ -d "$src" ]]; then
     command scp -r -- "$src" "$dest"
   else
     command scp -- "$src" "$dest"
   fi
+}
+
+lmk() {
+  local dest="$*"
+  if [[ -z "$dest" ]]; then
+    read "dest?make directory › "
+  fi
+  [[ -n "$dest" ]] || return
+  lk _mkdir "$dest"
 }
 
 lrm() {

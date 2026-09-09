@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.0-beta"
+VERSION="3.0.0-beta.5"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -137,11 +137,12 @@ INSPECT
   lk up / ports        what is listening?
   lk port NUMBER       inspect one listening port
   lk process TERM      find a running process
+  lk processes         browse/filter processes · Y copies PID
   lk pid NUMBER        inspect one process ID
   lk git [PATH]        repository status
   lk machine / gpu     machine capabilities
   lk disk              disk usage
-  lk net               network + Tailscale identity
+  lk net               browse network addresses · Y copies IP
   lk tailscale         tailnet status
   lk ollama            Ollama status
   lk ollama models     model control panel · Enter select · X enable/disable
@@ -173,7 +174,7 @@ FILE ACTIONS
   lmv [PATH]           LOOK-assisted move
   lcp [PATH]           LOOK-assisted copy
   lscp [PATH]          LOOK-assisted scp
-  lrm [PATH]           LOOK-assisted remove (confirmed)\n  lk undo              undo the last LOOK filesystem action
+  lrm [PATH]           LOOK-assisted remove (confirmed)\n  lmk PATH             make directory path · undoable\n  lk undo              undo the last LOOK filesystem action
 
 SHORTCUTS
   l / ls   smart view        ll       details
@@ -281,7 +282,7 @@ def home():
     print(f"{_c('l','36')} look around   {_c('lo','36')} ask   {_c('lk','36')} inspect   {_c('lh','36')} home")
     return 0
 
-def doctor():
+def _doctor_body():
     import json
     import urllib.request
 
@@ -328,9 +329,24 @@ def doctor():
     print(f"  {'✓' if web_key else '·'} web search key")
     print(f"  {'✓' if memory_ok else '✗'} persistent memory")
 
+    print("\nPREVIEW · optional")
+    image_preview=bool(shutil.which("chafa"))
+    pdf_preview=image_preview and bool(shutil.which("pdftoppm") or (platform.system()=="Darwin" and shutil.which("qlmanage")))
+    print(f"  {'✓' if image_preview else '·'} image preview" + ("" if image_preview else " · install chafa to enable"))
+    print(f"  {'✓' if pdf_preview else '·'} PDF image preview" + ("" if pdf_preview else " · needs image preview + PDF rasterizer"))
+
     good=all(ok for _,ok in checks+files) and memory_ok
     print("\n"+("Everything looks good." if good else "LOOK found something worth checking."))
     return 0 if good else 1
+
+
+def doctor():
+    import io, contextlib
+    buf=io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code=_doctor_body()
+    _page_text(buf.getvalue())
+    return code
 
 
 def _empty_memory():
@@ -800,6 +816,7 @@ def _undo_last():
                 raise RuntimeError("copied file has changed; refusing to remove it")
             if dst.is_dir(): shutil.rmtree(dst)
             else: dst.unlink()
+            _cleanup_created_dirs(entry.get("created_dirs",[]))
             detail=f"removed copied {dst.name}"
         elif kind=="move":
             src=Path(entry["source"]); dst=Path(entry["destination"])
@@ -808,6 +825,7 @@ def _undo_last():
             if src.exists():
                 raise RuntimeError("original location is occupied")
             shutil.move(str(dst), str(src))
+            _cleanup_created_dirs(entry.get("created_dirs",[]))
             detail=f"{dst.name} → {src}"
         elif kind=="remove":
             original=Path(entry["source"]); trash=Path(entry["trash"])
@@ -826,6 +844,32 @@ def _undo_last():
                 raise RuntimeError("directory is no longer empty; refusing to remove it")
             path.rmdir()
             detail=f"removed empty {path.name}/"
+        elif kind=="batch":
+            items=entry.get("items",[])
+            for item in reversed(items):
+                ik=item.get("kind")
+                if ik=="copy":
+                    dst=Path(item["destination"])
+                    if not dst.exists(): raise RuntimeError(f"{dst.name} no longer exists")
+                    expected=item.get("sha256")
+                    if expected and dst.is_file() and _sha256_file(dst)!=expected:
+                        raise RuntimeError(f"{dst.name} changed; refusing batch undo")
+                    if dst.is_dir(): shutil.rmtree(dst)
+                    else: dst.unlink()
+                    _cleanup_created_dirs(item.get("created_dirs",[]))
+                elif ik=="move":
+                    src=Path(item["source"]); dst=Path(item["destination"])
+                    if not dst.exists(): raise RuntimeError(f"{dst.name} no longer exists")
+                    if src.exists(): raise RuntimeError(f"{src} is occupied")
+                    shutil.move(str(dst),str(src))
+                    _cleanup_created_dirs(item.get("created_dirs",[]))
+                elif ik=="remove":
+                    original=Path(item["source"]); trash=Path(item["trash"])
+                    if original.exists(): raise RuntimeError(f"{original} is occupied")
+                    if not trash.exists(): raise RuntimeError(f"{original.name} is no longer recoverable")
+                    original.parent.mkdir(parents=True,exist_ok=True)
+                    shutil.move(str(trash),str(original))
+            detail=f"{len(items)} items restored"
         else:
             raise RuntimeError("unknown undo record")
     except (OSError, RuntimeError) as exc:
@@ -841,6 +885,69 @@ def _undo_last():
 
 
 
+def _batch_action(kind, destination, paths):
+    """Perform several LOOK mutations but expose them as one undo transaction."""
+    before=_load_undo()
+    before_len=len(before)
+    results=[]
+    try:
+        if kind in {"copy","move"}:
+            dest=Path(destination).expanduser()
+            # Multiple sources always target a directory.
+            if len(paths)>1:
+                raw=str(destination)
+                if not raw.endswith(("/",os.sep)):
+                    raw+=os.sep
+                destination=raw
+            for raw in paths:
+                result=_interactive_file_action(kind,raw,destination)
+                if not result.startswith(("COPY OK","MOVE OK")):
+                    raise RuntimeError(result)
+                results.append(result)
+        elif kind=="remove":
+            for raw in paths:
+                result=_journal_remove(raw)
+                if not result.startswith("REMOVE OK"):
+                    raise RuntimeError(result)
+                results.append(result)
+        else:
+            raise RuntimeError("unknown batch action")
+
+        after=_load_undo()
+        created=after[before_len:]
+        if len(created)!=len(paths):
+            raise RuntimeError("undo journal mismatch")
+        combined=before+[{"kind":"batch","items":created,"time":time.time()}]
+        _save_undo(combined)
+        print(f"{kind.upper()} OK · {len(paths)} item{'s' if len(paths)!=1 else ''} · undo available · lk undo")
+        return 0
+    except RuntimeError as exc:
+        # Roll back only mutations created by this batch. A failed batch should
+        # not leave half an operation behind or pollute the user's undo stack.
+        while len(_load_undo())>before_len:
+            if _undo_last()!=0:
+                break
+        print(f"{_c('✗','31')} {kind.upper()} failed · {exc}")
+        return 1
+
+
+def _interactive_file_action(kind, src, dest):
+    action=_journal_copy if kind=="copy" else _journal_move
+    result=action(src,dest)
+    if result.startswith("CREATE_DIR_REQUIRED · "):
+        needed=result.split(" · ",1)[1]
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return result
+        try:
+            answer=input(f"{needed} does not exist\nM create directory and continue · Esc/Enter cancel › ").strip().lower()
+        except (EOFError,KeyboardInterrupt):
+            return "· cancelled"
+        if answer!="m":
+            return "· cancelled"
+        result=action(src,dest,create_missing=True)
+    return result
+
+
 def _action_result(text):
     """Color only the CLI presentation; tool/API text stays plain."""
     if not sys.stdout.isatty():
@@ -854,53 +961,120 @@ def _action_result(text):
     return text
 
 
-def _final_destination(src, requested):
-    requested=Path(requested).expanduser().resolve()
-    return requested/src.name if requested.exists() and requested.is_dir() else requested
+def _destination_plan(src, requested):
+    raw=str(requested)
+    req=Path(requested).expanduser().resolve()
+    directory_intent=raw.endswith(("/", os.sep)) or (req.exists() and req.is_dir())
+    dst=req/src.name if directory_intent else req
+    needed_root=req if directory_intent else dst.parent
+    return req,dst,directory_intent,needed_root
 
 
-def _journal_copy(src, requested_destination):
+def _copy_variant(path):
+    path=Path(path)
+    if path.is_dir() or not path.suffix:
+        base=path.name
+        suffix=""
+    else:
+        base=path.stem
+        suffix=path.suffix
+    parent=path.parent
+    candidate=parent/f"{base} copy{suffix}"
+    number=2
+    while candidate.exists():
+        candidate=parent/f"{base} copy {number}{suffix}"
+        number+=1
+    return candidate
+
+
+def _missing_directories(path):
+    path=Path(path)
+    missing=[]
+    cursor=path
+    while not cursor.exists():
+        missing.append(cursor)
+        parent=cursor.parent
+        if parent==cursor:
+            break
+        cursor=parent
+    return list(reversed(missing))
+
+
+def _make_missing_directories(path):
+    created=[]
+    for folder in _missing_directories(path):
+        folder.mkdir()
+        created.append(str(folder))
+    return created
+
+
+def _cleanup_created_dirs(paths):
+    for raw in reversed(paths or []):
+        p=Path(raw)
+        try:
+            if p.is_dir() and not any(p.iterdir()):
+                p.rmdir()
+        except OSError:
+            pass
+
+
+def _journal_copy(src, requested_destination, create_missing=False):
     src=Path(src).expanduser().resolve()
-    dst=_final_destination(src, requested_destination)
+    req,dst,directory_intent,needed_root=_destination_plan(src, requested_destination)
     if not src.exists():
         return f"Copy failed: source not found: {src}"
-    if dst.exists():
+    if dst==src and req.exists() and req.is_dir():
+        dst=_copy_variant(src)
+        needed_root=dst.parent
+    elif dst.exists():
         return f"Copy refused: destination already exists: {dst}"
-    if not dst.parent.exists() or not dst.parent.is_dir():
-        return f"Copy failed: destination parent does not exist: {dst.parent}"
+    missing=_missing_directories(needed_root)
+    if missing and not create_missing:
+        return f"CREATE_DIR_REQUIRED · {needed_root}"
+    created=[]
     try:
+        if missing:
+            created=_make_missing_directories(needed_root)
         if src.is_dir():
             shutil.copytree(src,dst,copy_function=shutil.copy2)
             files=sum(1 for p in dst.rglob("*") if p.is_file())
-            _record_undo({"kind":"copy","destination":str(dst),"time":time.time()})
+            _record_undo({"kind":"copy","destination":str(dst),"created_dirs":created,"time":time.time()})
             return f"COPY OK · {src.name} → {dst} · directory · {files} files · undo available · lk undo"
         shutil.copy2(src,dst)
         source_hash=_sha256_file(src); destination_hash=_sha256_file(dst)
         if source_hash != destination_hash:
             try: dst.unlink()
             except OSError: pass
+            _cleanup_created_dirs(created)
             return "Copy verification failed: SHA-256 mismatch; destination was removed."
-        _record_undo({"kind":"copy","destination":str(dst),"sha256":destination_hash,"time":time.time()})
+        _record_undo({"kind":"copy","destination":str(dst),"sha256":destination_hash,"created_dirs":created,"time":time.time()})
         return f"COPY OK · {src.name} → {dst} · {src.stat().st_size} bytes · SHA-256 verified identical · undo available · lk undo"
     except OSError as exc:
+        _cleanup_created_dirs(created)
         return f"Copy failed: {exc}"
 
 
-def _journal_move(src, requested_destination):
+def _journal_move(src, requested_destination, create_missing=False):
     src=Path(src).expanduser().resolve()
-    dst=_final_destination(src, requested_destination)
+    req,dst,directory_intent,needed_root=_destination_plan(src, requested_destination)
     if not src.exists():
         return f"Move failed: source not found: {src}"
     if dst.exists():
         return f"Move refused: destination already exists: {dst}"
-    if not dst.parent.exists() or not dst.parent.is_dir():
-        return f"Move failed: destination parent does not exist: {dst.parent}"
+    missing=_missing_directories(needed_root)
+    if missing and not create_missing:
+        return f"CREATE_DIR_REQUIRED · {needed_root}"
+    created=[]
     try:
+        if missing:
+            created=_make_missing_directories(needed_root)
         shutil.move(str(src),str(dst))
-        _record_undo({"kind":"move","source":str(src),"destination":str(dst),"time":time.time()})
+        _record_undo({"kind":"move","source":str(src),"destination":str(dst),"created_dirs":created,"time":time.time()})
         return f"MOVE OK · {src.name} → {dst} · undo available · lk undo"
     except OSError as exc:
+        _cleanup_created_dirs(created)
         return f"Move failed: {exc}"
+
 
 
 def _journal_remove(path):
@@ -925,7 +1099,7 @@ def _journal_mkdir(path):
     if target.exists():
         return f"Directory already exists: {target}" if target.is_dir() else f"Create directory failed: path exists as a file: {target}"
     try:
-        target.mkdir()
+        target.mkdir(parents=True)
         _record_undo({"kind":"mkdir","path":str(target),"time":time.time()})
         return f"MKDIR OK · {target} · undo available · lk undo"
     except OSError as exc:
@@ -1603,6 +1777,150 @@ def inspect_project(path='.'):
     return 0
 
 
+def _copy_value(value):
+    try:
+        if platform.system()=="Darwin" and shutil.which("pbcopy"):
+            subprocess.run(["pbcopy"],input=str(value),text=True,check=True)
+            return True
+        if shutil.which("wl-copy"):
+            subprocess.run(["wl-copy"],input=str(value),text=True,check=True)
+            return True
+        if shutil.which("xclip"):
+            subprocess.run(["xclip","-selection","clipboard"],input=str(value),text=True,check=True)
+            return True
+    except (OSError,subprocess.SubprocessError):
+        pass
+    return False
+
+
+def _read_tty_key(fd, timeout=None):
+    if timeout is not None:
+        ready,_,_=select.select([fd],[],[],timeout)
+        if not ready:
+            return ""
+    ch=os.read(fd,1)
+    if ch != b"\x1b":
+        return ch.decode("utf-8","ignore")
+    seq=bytearray(ch)
+    while len(seq)<8:
+        ready,_,_=select.select([fd],[],[],0.035)
+        if not ready:
+            break
+        seq.extend(os.read(fd,1))
+        if seq[-1:] in b"~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
+            break
+    return {
+        b"\x1b[A":"up",
+        b"\x1b[B":"down",
+        b"\x1b[5~":"pageup",
+        b"\x1b[6~":"pagedown",
+    }.get(bytes(seq),"esc")
+
+
+def _select_values(title, rows):
+    """Shared LOOK selector: browse, Enter to filter, arrows/J/K move, Y copies value."""
+    if not rows:
+        return 1
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        _title(title)
+        for label,value in rows:
+            print(f"  {label}  {value}")
+        return 0
+
+    fd=sys.stdin.fileno()
+    old=termios.tcgetattr(fd)
+    query=""
+    filtering=False
+    idx=0
+    notice=""
+    try:
+        tty.setcbreak(fd)
+        while True:
+            terms=query.casefold().split()
+            visible=[
+                row for row in rows
+                if all(term in f"{row[0]} {row[1]}".casefold() for term in terms)
+            ]
+            if visible:
+                idx=min(idx,len(visible)-1)
+            else:
+                idx=0
+
+            terminal=shutil.get_terminal_size((100,30))
+            height=max(8,terminal.lines)
+            width=max(40,terminal.columns)
+            usable=max(3,height-5)
+            top=max(0,min(max(0,len(visible)-usable),idx-usable+1))
+            page=visible[top:top+usable]
+
+            sys.stdout.write("\033[2J\033[H")
+            _title(title, f"{len(visible)} of {len(rows)}")
+            for n,(label,value) in enumerate(page,start=top):
+                mark=_c("›","1;36") if n==idx else " "
+                raw_value=str(value)
+                max_label=max(8,width-len(raw_value)-5)
+                shown_label=str(label)
+                if len(shown_label)>max_label:
+                    shown_label=shown_label[:max(1,max_label-1)]+"…"
+                value_text=_c(raw_value,"2")
+                print(f"{mark} {shown_label}  {value_text}")
+
+            if filtering:
+                footer=(f"{_c('FILTER','1;36')} {query}█  "
+                        f"{_c('↑↓ choose  Y copy  Enter done  Esc clear/back  q quit','2')}")
+            else:
+                footer=_c("↑↓ choose  Enter filter  Y copy  PgUp/PgDn page  Esc/q exit","2")
+            if notice:
+                footer += "  " + _c(notice,"33")
+                notice=""
+            print("\n"+footer,end="",flush=True)
+
+            key=_read_tty_key(fd)
+            if key in {"q","Q","\x03"}:
+                break
+            if key=="esc":
+                if filtering and query:
+                    query=""
+                    idx=0
+                    continue
+                if filtering:
+                    filtering=False
+                    continue
+                break
+            if key in {"up","k"} and visible:
+                idx=max(0,idx-1)
+                continue
+            if key in {"down","j"} and visible:
+                idx=min(len(visible)-1,idx+1)
+                continue
+            if key=="pageup" and visible:
+                idx=max(0,idx-usable)
+                continue
+            if key=="pagedown" and visible:
+                idx=min(len(visible)-1,idx+usable)
+                continue
+            if key in {"y","Y"} and visible:
+                notice="copied" if _copy_value(visible[idx][1]) else "clipboard unavailable"
+                continue
+            if key in {"\r","\n"}:
+                filtering=not filtering
+                continue
+            if filtering and key in {"\x7f","\b"}:
+                if query:
+                    query=query[:-1]
+                    idx=0
+                continue
+            if filtering and len(key)==1 and key.isprintable():
+                query+=key
+                idx=0
+                continue
+    finally:
+        termios.tcsetattr(fd,termios.TCSADRAIN,old)
+        print()
+    return 0
+
+
+
 def inspect_up():
     _title('up', 'listening services')
     text=''
@@ -1650,23 +1968,23 @@ def inspect_machine():
 
 def inspect_network():
     import socket
-    _title('network', platform.node())
     local=[]
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             ip=info[4][0]
             if not ip.startswith('127.') and ip not in local: local.append(ip)
-    except OSError: pass
-    print(f"  local   {', '.join(local) if local else 'unknown'}")
+    except OSError:
+        pass
+    rows=[("local",ip) for ip in local]
     if shutil.which('tailscale'):
         ip=_run_text(['tailscale','ip','-4'])
-        if ip: print(f"  tailnet {ip}")
-        status=_run_text(['tailscale','status'])
-        if status: print(f"  tailscale {_c('up', '32')}")
-    else:
-        print(f"  tailscale {_c('not installed', '2')}")
+        if ip: rows.append(("tailnet",ip))
+    if rows:
+        return _select_values(f"network · {platform.node()}",rows)
+    _title('network', platform.node())
+    print("  local      unknown")
+    print(f"  tailscale {_c('not installed','2')}" if not shutil.which('tailscale') else f"  tailscale {_c('no address','2')}")
     return 0
-
 
 def inspect_tailscale():
     _title('tailscale')
@@ -2231,23 +2549,28 @@ def inspect_disk():
     return 0
 
 
-def inspect_process(term):
-    """Best-effort process-name lookup for lk <anything>."""
+def _process_rows(term=None):
     text=_run_text(['ps','-axo','pid=,command='],2)
-    hits=[]
+    rows=[]
     for line in text.splitlines():
         stripped=line.strip()
-        if term.lower() not in stripped.lower():
-            continue
-        first=stripped.split(None,1)[0] if stripped else ''
-        if first.isdigit() and int(first)==os.getpid():
-            continue
-        hits.append(stripped)
-    if not hits: return None
-    _title(term, 'process')
-    for line in hits[:15]: print(f"  {line}")
-    if len(hits)>15: print(f"  {_c('…', '2')} {len(hits)-15} more")
-    return 0
+        if not stripped: continue
+        parts=stripped.split(None,1)
+        if not parts or not parts[0].isdigit(): continue
+        pid=parts[0]; command=parts[1] if len(parts)>1 else ''
+        if int(pid)==os.getpid(): continue
+        if term and term.lower() not in stripped.lower(): continue
+        rows.append((command[:72] or "process",pid))
+    return rows
+
+def inspect_process(term):
+    """Best-effort process-name lookup with selectable PID values."""
+    rows=_process_rows(term)
+    if not rows: return None
+    return _select_values(f"{term} · process",rows)
+
+def inspect_processes():
+    return _select_values("processes",_process_rows())
 
 
 def _human_size(size):
@@ -2503,15 +2826,25 @@ def main():
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
     if cmd=="home": return home()
     if cmd=="undo": return _undo_last()
+    if cmd=="_batch":
+        if len(rest)<3: return 2
+        kind=rest[0]
+        if kind=="remove":
+            paths=rest[2:] if rest[1]=="--" else rest[1:]
+            return _batch_action(kind,"",paths)
+        return _batch_action(kind,rest[1],rest[2:])
     if cmd=="_copy":
         if len(rest)!=2: return 2
-        print(_action_result(_journal_copy(rest[0],rest[1]))); return 0
+        print(_action_result(_interactive_file_action("copy",rest[0],rest[1]))); return 0
     if cmd=="_move":
         if len(rest)!=2: return 2
-        print(_action_result(_journal_move(rest[0],rest[1]))); return 0
+        print(_action_result(_interactive_file_action("move",rest[0],rest[1]))); return 0
     if cmd=="_remove":
         if len(rest)!=1: return 2
         print(_action_result(_journal_remove(rest[0]))); return 0
+    if cmd=="_mkdir":
+        if len(rest)!=1: return 2
+        print(_action_result(_journal_mkdir(rest[0]))); return 0
     if cmd=="doctor": return doctor()
     if cmd=="config":
         print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {_preferred_ollama_model()}\n  ollama models {OLLAMA_MODELS_FILE}")
@@ -2528,6 +2861,7 @@ def main():
     if cmd=="port":
         if not rest or not rest[0].isdigit(): print("usage: lk port <number>"); return 2
         port=int(rest[0]); return inspect_port(port) if 1 <= port <= 65535 else 2
+    if cmd in {"processes","procs"}: return inspect_processes()
     if cmd in {"process","proc"}:
         if not rest: print("usage: lk process <name>"); return 2
         query=" ".join(rest); result=inspect_process(query)
