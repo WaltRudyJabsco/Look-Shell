@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.0-beta.5"
+VERSION="3.0.0-beta.6"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -182,7 +182,7 @@ SHORTCUTS
   lt       tree              lr       recent
   lz       sizes             zll WORD jump + look
   cdl WORD jump + details    fznv     fuzzy edit
-  f        fuzzy open        rs       reset ritual
+  f        find anywhere → LOOK        rs       reset ritual
   lh       LOOK home         lo       Ollama chat
   lo ASK   ask immediately
 

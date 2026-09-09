@@ -186,16 +186,33 @@ fznv() {
   [[ -n "$selection" ]] && nvim -- "$selection"
 }
 
-# Open a fuzzy-picked path in the desktop environment.
+# Global retrieval: find from anywhere, then hand the result to LOOK.
+# fd is preferred because it is fast and respects the usual project junk;
+# find is the portable fallback.
 f() {
   local selection
-  selection=$(fzf) || return
-  [[ -z "$selection" ]] && return
-  if [[ "$OSTYPE" == darwin* ]]; then
-    open -- "$selection"
-  elif (( $+commands[xdg-open] )); then
-    xdg-open "$selection" >/dev/null 2>&1 &!
+  if (( $+commands[fd] )); then
+    selection=$(
+      fd --hidden --follow --absolute-path \
+        --exclude .git --exclude node_modules --exclude .Trash \
+        --exclude Library/Caches --exclude .cache \
+        . "$HOME" 2>/dev/null |
+      fzf --prompt='FIND › ' --height=100% --layout=reverse
+    ) || return
+  else
+    selection=$(
+      command find "$HOME" \
+        \( -path "$HOME/.git" -o -path '*/.git' -o -path '*/node_modules' -o -path "$HOME/.Trash" -o -path "$HOME/Library/Caches" -o -path "$HOME/.cache" \) -prune -o \
+        -mindepth 1 -print 2>/dev/null |
+      fzf --prompt='FIND › ' --height=100% --layout=reverse
+    ) || return
   fi
+
+  [[ -n "$selection" ]] || return
+
+  # Hand the exact result to LOOK's existing object-action language.
+  # Opening its parent lets both files and folders arrive already selected.
+  _look "${selection:h}" --mode smart --interactive --select "$selection"
 }
 
 

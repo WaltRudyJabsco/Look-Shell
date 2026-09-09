@@ -600,7 +600,7 @@ def copy_path(path:Path)->bool:
     except (OSError,subprocess.CalledProcessError): return False
 
 
-def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,on_back=None,on_go=None,force_interactive=False)->None:
+def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,on_back=None,on_go=None,force_interactive=False,initial_select:Path|None=None)->None:
     # Interactive state machine: browse -> filter -> select.
     usable=max(3,height-2)
     if (len(rows)<=height-1 and not force_interactive) or not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -611,6 +611,16 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
     notice=''
     pending=''
     marked:set[Path]=set()
+
+    if initial_select is not None and candidates:
+        matches=candidates('')
+        wanted=initial_select.resolve()
+        for index,path in enumerate(matches):
+            if path.resolve()==wanted:
+                selected=index
+                filtering=True
+                selecting=True
+                break
 
     def refresh_filter()->None:
         nonlocal current,top,matches,selected
@@ -892,12 +902,14 @@ def main():
     ap.add_argument('--depth',type=int,default=2)
     ap.add_argument('--no-hidden',action='store_true')
     ap.add_argument('--interactive',action='store_true')
+    ap.add_argument('--select',default=None,help=argparse.SUPPRESS)
     ap.add_argument('-h','--help',action='help')
     args=ap.parse_args()
     target=Path(os.path.expanduser(args.path))
     hidden=not args.no_hidden
 
     browsed_once=False
+    initial_select=Path(os.path.expanduser(args.select)).resolve() if args.select else None
     history:list[Path]=[]
     while True:
         if not target.is_dir():
@@ -922,7 +934,8 @@ def main():
               on_browse=choose_dir,
               on_back=choose_back if history else None,
               on_go=choose_go,
-              force_interactive=(args.interactive or browsed_once))
+              force_interactive=(args.interactive or browsed_once),
+              initial_select=initial_select if not browsed_once else None)
         if go_to is not None:
             request=Path.home()/'.local'/'share'/'look'/'cd_request'
             request.parent.mkdir(parents=True,exist_ok=True)
