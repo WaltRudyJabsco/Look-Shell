@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="2.2.0"
+VERSION="3.0.0-beta"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -156,6 +156,7 @@ SYSTEM
   lk config            show installed paths
   lk secrets           secrets status (never contents)
   lk version           print version
+  LOOK_CLASSIC=1 lk    use the frozen classic presentation
   lk o [search] [ASK]  Ollama chat / optional first prompt
   lk o --no-start ...  never start a missing local server
   lk help              this glossary
@@ -206,20 +207,12 @@ HELP PAGER
 
 
 def home():
-    """Paint a small, friendly LOOK landing screen, then return to the shell."""
+    """Paint the LOOK 3 landing screen, then immediately return to the shell."""
     import urllib.request
 
     tty_out = sys.stdout.isatty()
     if tty_out:
-        # Clear + home cursor. Unlike a dashboard, HOME immediately returns.
         sys.stdout.write("\033[2J\033[H")
-
-    cyan="\033[36m" if tty_out else ""
-    magenta="\033[35m" if tty_out else ""
-    green="\033[32m" if tty_out else ""
-    dim="\033[2m" if tty_out else ""
-    bold="\033[1m" if tty_out else ""
-    reset="\033[0m" if tty_out else ""
 
     cwd=Path.cwd()
     try:
@@ -228,6 +221,7 @@ def home():
         shown=str(cwd)
 
     branch=''
+    dirty=False
     try:
         result=subprocess.run(
             ['git','branch','--show-current'], cwd=cwd,
@@ -235,11 +229,17 @@ def home():
         )
         if result.returncode == 0:
             branch=result.stdout.strip()
+        status=subprocess.run(
+            ['git','status','--porcelain'], cwd=cwd,
+            capture_output=True, text=True, timeout=0.5
+        )
+        dirty=(status.returncode==0 and bool(status.stdout.strip()))
     except (OSError, subprocess.SubprocessError):
         pass
 
     base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
     ollama='offline'
+    ollama_live=False
     try:
         with urllib.request.urlopen(base + '/api/ps', timeout=0.45) as response:
             import json
@@ -247,15 +247,22 @@ def home():
         if models:
             name=models[0].get('name') or models[0].get('model') or 'ready'
             ollama=name
+            ollama_live=True
         else:
             ollama='ready · idle'
     except Exception:
         if shutil.which('ollama'):
             ollama='available · idle'
 
-    print(f"{cyan}{bold}LOOK {VERSION}{reset}")
-    print(f"{cyan}◆{reset} {shown}" + (f"  {dim}· git {branch}{reset}" if branch else ''))
-    print(f"{magenta}lo{reset} {ollama}")
+    print(_c(f"LOOK {VERSION}", "1;36"))
+    git_tail=''
+    if branch:
+        git_state=_c("●", "33" if dirty else "32")
+        git_tail=f"  {_c('git','2')} {branch} {git_state}"
+    print(f"{_c('◆','36')} {_c(shown,'1')}{git_tail}")
+    lo_state=_c("●","32") if ollama_live else _c("○","2")
+    print(f"{_c('lo','1;36')} {lo_state} {_c(ollama,'2')}")
+    print(_c("─"*min(62, max(28, len(shown)+16)), "2"))
     print()
 
     fortune=shutil.which('fortune')
@@ -270,8 +277,8 @@ def home():
         except (OSError, subprocess.SubprocessError):
             pass
 
-    print(f"{dim}What file do you want? What question do you have?{reset}")
-    print(f"{dim}l files · lo ask · lk help · lh home{reset}")
+    print(_c("What file do you want? What question do you have?", "2"))
+    print(f"{_c('l','36')} look around   {_c('lo','36')} ask   {_c('lk','36')} inspect   {_c('lh','36')} home")
     return 0
 
 def doctor():
@@ -410,15 +417,16 @@ def _activity(label):
         return
 
     stop = threading.Event()
-    frames = ("·", "··", "···")
+    frames = ("◐", "◓", "◑", "◒")
 
     def animate():
         i = 0
         while not stop.is_set():
-            sys.stdout.write(f"\r\033[2K\033[2m{frames[i % len(frames)]} {label}\033[0m")
+            frame=_c(frames[i % len(frames)], "36")
+            sys.stdout.write(f"\r\033[2K{frame} {_c(label,'2')}")
             sys.stdout.flush()
             i += 1
-            stop.wait(0.35)
+            stop.wait(0.12)
 
     worker = threading.Thread(target=animate, daemon=True)
     worker.start()
@@ -1435,8 +1443,33 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
 
 
 def _c(text, code):
+    """Semantic terminal color with a truecolor LOOK 3 presentation path."""
     if not sys.stdout.isatty():
         return str(text)
+
+    classic=os.environ.get("LOOK_CLASSIC","").lower() in {"1","true","yes","on"}
+    truecolor=(not classic and (
+        os.environ.get("COLORTERM","").lower() in {"truecolor","24bit"}
+        or os.environ.get("TERM_PROGRAM") in {"iTerm.app","Apple_Terminal","WezTerm","ghostty"}
+    ))
+    if not truecolor:
+        return f"\033[{code}m{text}\033[0m"
+
+    rgb={
+        "36":(103,214,238), "1;36":(103,214,238),
+        "32":(139,214,145), "1;32":(139,214,145),
+        "33":(238,200,109),
+        "31":(239,125,135),
+    }
+    if code=="2":
+        return f"\033[38;2;128;139;154m{text}\033[0m"
+    if code=="1":
+        return f"\033[1m{text}\033[0m"
+    color=rgb.get(code)
+    if color:
+        bold="\033[1m" if code.startswith("1;") else ""
+        r,g,b=color
+        return f"{bold}\033[38;2;{r};{g};{b}m{text}\033[0m"
     return f"\033[{code}m{text}\033[0m"
 
 

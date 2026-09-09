@@ -23,9 +23,25 @@ LOOK is simply opinionated about the things you do all the time: **inspect first
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
+![LOOK Shell help](screenshots/LOOK_Shell_help.png)
 
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
+
+## LOOK 3 beta
+
+LOOK 3 keeps the **2.2 command language and behavior as the compatibility core** and modernizes the presentation layer around it.
+
+The beta adds a terminal-native truecolor palette, softer visual hierarchy, clearer live states, a composed interactive footer, active-row surfaces, and faster state animation for real waiting states. It does not add a TUI framework, mouse dependency, daemon, or new command grammar.
+
+Modern presentation is capability-based. On common truecolor terminals LOOK uses its 24-bit palette; otherwise it falls back to the existing ANSI presentation. To force the classic presentation at any time:
+
+```bash
+LOOK_CLASSIC=1 lk
+LOOK_CLASSIC=1 l
+LOOK_CLASSIC=1 lo
+```
+
+The rule for 3.x is simple: **2.2 behavior is constitutional. Presentation may evolve; muscle memory does not.**
+
 
 ## Install
 

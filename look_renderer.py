@@ -23,8 +23,40 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-RESET='\x1b[0m'; BOLD='\x1b[1m'; DIM='\x1b[2m'; REVERSE='\x1b[7m'
-BLUE='\x1b[38;5;75m'; CYAN='\x1b[38;5;81m'; GREEN='\x1b[38;5;114m'; YELLOW='\x1b[38;5;221m'; MAGENTA='\x1b[38;5;176m'; RED='\x1b[38;5;203m'; WHITE='\x1b[38;5;252m'; GRAY='\x1b[38;5;244m'
+RESET='\x1b[0m'; BOLD='\x1b[1m'; DIM='\x1b[2m'; ITALIC='\x1b[3m'; REVERSE='\x1b[7m'
+
+# LOOK 3 presentation layer. The behavioral core stays deliberately boring;
+# presentation scales up only when the terminal advertises truecolor.
+_CLASSIC=os.environ.get('LOOK_CLASSIC','').lower() in {'1','true','yes','on'}
+_TRUECOLOR=(not _CLASSIC and (
+    os.environ.get('COLORTERM','').lower() in {'truecolor','24bit'}
+    or os.environ.get('TERM_PROGRAM') in {'iTerm.app','Apple_Terminal','WezTerm','ghostty'}
+))
+
+def _rgb(r:int,g:int,b:int)->str:
+    return f'\x1b[38;2;{r};{g};{b}m'
+
+def _bg(r:int,g:int,b:int)->str:
+    return f'\x1b[48;2;{r};{g};{b}m'
+
+if _TRUECOLOR:
+    # Quiet, cool palette: brighter state, softer metadata, no rainbow.
+    BLUE=_rgb(113,170,255)
+    CYAN=_rgb(103,214,238)
+    GREEN=_rgb(139,214,145)
+    YELLOW=_rgb(238,200,109)
+    MAGENTA=_rgb(196,144,236)
+    RED=_rgb(239,125,135)
+    WHITE=_rgb(224,229,236)
+    GRAY=_rgb(128,139,154)
+    FAINT=_rgb(89,99,113)
+    ACTIVE=_bg(34,50,67)+_rgb(238,244,250)+BOLD
+else:
+    BLUE='\x1b[38;5;75m'; CYAN='\x1b[38;5;81m'; GREEN='\x1b[38;5;114m'
+    YELLOW='\x1b[38;5;221m'; MAGENTA='\x1b[38;5;176m'; RED='\x1b[38;5;203m'
+    WHITE='\x1b[38;5;252m'; GRAY='\x1b[38;5;244m'; FAINT=DIM
+    ACTIVE=REVERSE
+
 CLEAR='\x1b[2J\x1b[H'; HIDE='\x1b[?25l'; SHOW='\x1b[?25h'
 
 @dataclass
@@ -138,7 +170,7 @@ def column_grid(entries:list[Entry], width:int, highlight_path:Path|None=None)->
             if len(plain)>cellw-2:
                 plain=plain[:max(1,cellw-3)]+'…'
             padding=' ' * max(1,cellw-len(plain))
-            style=REVERSE if highlight_path is not None and e.path==highlight_path else color_for(e)
+            style=ACTIVE if highlight_path is not None and e.path==highlight_path else color_for(e)
             pieces.append(style+plain+RESET+padding)
         rows.append(''.join(pieces).rstrip())
     return rows
@@ -188,7 +220,7 @@ def tree_rows(target:Path, depth:int, width:int, hidden:bool, query:str='', high
 
             branch='└─' if i==len(kids)-1 else '├─'
             line=f'{prefix}{branch} {marker(e)} {e.name}{"/" if e.is_dir else ""}'
-            style=REVERSE if highlight_path is not None and e.path==highlight_path else color_for(e)
+            style=ACTIVE if highlight_path is not None and e.path==highlight_path else color_for(e)
             rendered.append(style+fit(line,width)+RESET)
             rendered.extend(descendants)
             any_match=True
@@ -223,8 +255,10 @@ def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, qu
     try: display=str(target.resolve().relative_to(Path.home()))
     except ValueError: display=str(target.resolve())
     if not display.startswith('/'): display='~/'+display if display!='.' else '~'
-    header=f'{BOLD}{CYAN}LOOK{RESET} {DIM}{display}{RESET}  {GRAY}· {tree_dir_count} dirs · {tree_file_count} files{RESET}'
-    rule=DIM+('─'*min(width, max(20,len(strip_ansi(header)))))+RESET
+    mode_label='' if mode=='smart' else f' · {mode}'
+    header=(f'{BOLD}{CYAN}LOOK{RESET}  {WHITE}{display}{RESET}'
+            f'  {FAINT}{tree_dir_count} dirs · {tree_file_count} files{mode_label}{RESET}')
+    rule=FAINT+('─'*min(width, max(24,len(strip_ansi(header)))))+RESET
     rows=[header,rule]
     if mode=='tree':
         rows+=tree_rows(target,tree_depth,width,hidden,query,highlight_path)
@@ -234,13 +268,13 @@ def build_view(target:Path, mode:str, hidden:bool, width:int, tree_depth:int, qu
         # Smart mode: small sets get labeled sections; larger sets become one compact grouped grid.
         if mode=='smart' and len(entries)<=18:
             if dirs:
-                rows += [f'{DIM}folders{RESET}'] + column_grid(dirs,width,highlight_path)
+                rows += [f'{FAINT}{BOLD}FOLDERS{RESET}'] + column_grid(dirs,width,highlight_path)
             if dirs and files: rows.append('')
             if files:
-                rows += [f'{DIM}files{RESET}'] + column_grid(files,width,highlight_path)
+                rows += [f'{FAINT}{BOLD}FILES{RESET}'] + column_grid(files,width,highlight_path)
         else:
             rows += column_grid(entries,width,highlight_path)
-    if len(rows)==2: rows.append(DIM+'(empty)'+RESET)
+    if len(rows)==2: rows.append(FAINT+'· empty'+RESET)
     return rows
 
 
@@ -529,13 +563,13 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                         l=left[i] if i<len(left) else ''
                         r=right[i] if i<len(right) else ''
                         pad=max(0,left_w-len(strip_ansi(l)))
-                        rendered.append(l+' '*pad+' │ '+r)
+                        rendered.append(l+' '*pad+FAINT+' │ '+RESET+r)
                     sys.stdout.write('\n'.join(rendered[:usable]))
                 else:
                     preview_h=max(4,usable//3)
                     list_h=max(3,usable-preview_h-1)
                     rendered=[fit(r,width) for r in page[:list_h]]
-                    rendered.append(DIM+('─'*width)+RESET)
+                    rendered.append(FAINT+('─'*width)+RESET)
                     rendered.extend(preview_rows(picked,width,preview_h))
                     sys.stdout.write('\n'.join(rendered[:usable]))
             else:
@@ -543,17 +577,22 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             last=min(len(current),top+usable)
             if filtering:
                 match_word='match' if len(matches)==1 else 'matches'
-                status=(f'{CYAN}  filter: {query}█{RESET}  {GRAY}{len(matches)} {match_word}{RESET}  '
-                        f'{DIM}↑/↓ choose · Enter open · E edit · O with · Y copy · P path · Esc clear{RESET}')
+                status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}█{RESET}'
+                        f'  {GRAY}{len(matches)} {match_word}{RESET}'
+                        f'  {FAINT}↑↓ choose  Enter open  E edit  O with  Y copy  P path  Esc clear{RESET}')
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
-                status=(f'{CYAN}  ▶ {name}{RESET} {GRAY}· {kind}{RESET}  '
-                        f'{DIM}j/k choose · Enter open · E edit · O with · Y copy · P path · Esc filter · q quit{RESET}')
+                status=(f'  {CYAN}{BOLD}SELECT{RESET} {WHITE}{name}{RESET} {GRAY}· {kind}{RESET}'
+                        f'  {FAINT}j/k choose  Enter open  E edit  O with  Y copy  P path  Esc filter  q quit{RESET}')
             elif query:
-                status=f'{CYAN}  filter: {query}{RESET}  {DIM}{last}/{len(current)} · Enter select · / edit · Esc clear · q quit{RESET}'
+                status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}{RESET}'
+                        f'  {GRAY}{last}/{len(current)}{RESET}'
+                        f'  {FAINT}Enter select  / edit  Esc clear  q quit{RESET}')
             else:
-                status=f'{DIM}  {last}/{len(current)}  Enter filter · space/pgdn next · b/pgup page · g/G ends' + (f' · Esc back' if on_back else '') + f' · q quit{RESET}'
+                back_hint='  Esc back' if on_back else ''
+                status=(f'  {FAINT}{last}/{len(current)}{RESET}'
+                        f'  {GRAY}Enter filter  Space/PgDn next  b/PgUp page  g/G ends{back_hint}  q quit{RESET}')
             if notice:
                 status=f'{status}  {YELLOW}{notice}{RESET}'
                 notice=''
