@@ -23,64 +23,9 @@ LOOK is simply opinionated about the things you do all the time: **inspect first
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_Shell_help.png)
+![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
 
-
-
-
-## LOOK 3 beta.5 input cleanup
-
-Beta.5 is deliberately surgical. `Tab` now marks/unmarks filesystem selections, so `Space` remains ordinary live-filter text and multi-word searches work without changing the existing filter flow.
-
-LOOK also recognizes the split-keyboard home-row arrow convention alongside physical arrows: `J K L ;` = left, down, up, right wherever the filesystem selector has directional movement. Existing arrow keys and the older lowercase `j/k` selection controls remain intact.
-
-
-## LOOK 3 beta.4 additions
-
-Beta.4 completes the filesystem handoff loop: **find → mark → act**.
-
-Inside filesystem filtering/selection, `Space` marks or unmarks the current object and `A` marks all current filter matches. Marks persist while you move and filter and are shown with `✓`. With no marks, an action applies to the highlighted object; with marks, it applies to the marked set.
-
-- `C` copies the selected/marked object(s).
-- `M` moves them.
-- `R` removes them with confirmation.
-- `Y` copies one path or all marked paths to the clipboard.
-- `G` means **go here**: leave LOOK and make the selected directory the actual parent-shell working directory. On a file, `G` goes to its containing directory.
-- `Enter` keeps its existing meaning: browse a directory or open a file.
-- `Esc` remains back/out and `q` remains quit.
-
-Multi-item copy, move, and remove operations are stored as one LOOK undo transaction. The shell-directory handoff is deliberately tiny: the renderer writes one requested path, the Zsh wrapper consumes it immediately, changes directory with `builtin cd`, and deletes the request.
-
-
-## LOOK 3 beta.3 additions
-
-Beta.3 repairs arrow-key navigation in system selectors and gives `lk processes` a proper LOOK browse/filter loop: Enter starts filtering, arrows or J/K move, PageUp/PageDown page, `Y` copies the selected PID, and Escape backs out consistently. `lk net` uses the same selector and copies the selected IP.
-
-Copy and move can now offer to create a missing destination directory and continue. Directory creation performed as part of that copy/move is recorded in the same undo transaction, so `lk undo` restores the original filesystem shape when it is still safe to do so.
-
-Image preview is optional and capability-based. If `chafa` is installed, LOOK renders common image formats directly in the existing preview pane. PDF page 1 can render through the same path when a local PDF rasterizer is available (`pdftoppm`, or macOS Quick Look). None of these tools are required; without them LOOK keeps its existing text/metadata preview.
-
-
-## LOOK 3 beta.2 additions
-
-Beta.2 unifies Escape as LOOK's back/out gesture while retaining `q`, makes an empty interactive filter immediately select from all visible candidates, adds overflow paging to `lk doctor`, adds selectable/copyable network and process facts (`Y` copies the natural value), adds `lk processes`, and expands file actions with two-argument `lcp` / `lmv` / `lscp` plus undoable `lmk`.
-
-## LOOK 3 beta
-
-LOOK 3 keeps the **2.2 command language and behavior as the compatibility core** and modernizes the presentation layer around it.
-
-The beta adds a terminal-native truecolor palette, softer visual hierarchy, clearer live states, a composed interactive footer, active-row surfaces, and faster state animation for real waiting states. It does not add a TUI framework, mouse dependency, daemon, or new command grammar.
-
-Modern presentation is capability-based. On common truecolor terminals LOOK uses its 24-bit palette; otherwise it falls back to the existing ANSI presentation. To force the classic presentation at any time:
-
-```bash
-LOOK_CLASSIC=1 lk
-LOOK_CLASSIC=1 l
-LOOK_CLASSIC=1 lo
-```
-
-The rule for 3.x is simple: **2.2 behavior is constitutional. Presentation may evolve; muscle memory does not.**
-
+![LOOK Shell filter](screenshots/LOOK_Shell_filter.png)
 
 ## Install
 
