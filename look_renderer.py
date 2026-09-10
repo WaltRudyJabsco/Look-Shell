@@ -959,12 +959,11 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                     if query: query=query[:-1]; refresh_filter()
                 elif key=='\x03': break
                 elif len(key)==1 and key.isprintable():
-                    # Debounce rapid typing: collect a short burst before rebuilding.
-                    # LOOK still feels live, but large recursive filters no longer
-                    # redraw once per character while the user is mid-word.
+                    # Capture the typing burst before rendering. Input stays ahead of redraws;
+                    # rebuild only after a tiny idle gap.
                     query+=key
                     while True:
-                        nxt=read_key(0.055)
+                        nxt=read_key(0.012)
                         if not nxt:
                             break
                         if nxt in {'\x7f','\b'}:

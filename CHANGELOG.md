@@ -1,5 +1,21 @@
 # LOOK Shell changelog
 
+## 3.0.5 — escape polish
+
+- Hidden Ollama key entry: Esc, Ctrl-C, Ctrl-D, or empty Enter cancels cleanly.
+- LO: Ctrl-C during thinking/searching cancels the current turn and returns control instead of tearing down the session.
+- Filter typing captures queued keystrokes before redraw with a 12 ms idle gap instead of 55 ms.
+- No command grammar, selection semantics, clipboard behavior, undo, or installer scope changed.
+
+
+## 3.0.4 — Ollama key setup
+
+- Adds `lk ollama key` and `lk ollama key status`.
+- Excludes `key` from the historical long-form Ollama chat route, so these commands are handled locally rather than sent to `lo`.
+- README encourages optional free Ollama account/API-key setup for web search.
+- No other LOOK behavior changed.
+
+
 ## 3.0.3 — GitHub install instructions
 
 - Removes the brittle guessed `/releases/latest/download/look-shell.zip` recipe.

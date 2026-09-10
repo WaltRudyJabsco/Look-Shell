@@ -4,12 +4,6 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
-
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
-
-![LOOK Shell home](screenshots/LOOK_home.png)
-
-
 The mental model is deliberately physical:
 
 ```text
@@ -25,13 +19,6 @@ Esc      back out
 ```
 
 LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
-
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
-![LOOK Shell AI](screenshots/LOOK_AI.png)
 
 ## Five minutes with LOOK
 
@@ -214,6 +201,16 @@ chmod +x install.sh
 ```
 
 LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
+
+### Optional Ollama web search
+
+If you use `lo`, a free Ollama account/API key enables its built-in web search. After installation:
+
+```sh
+lk ollama key
+```
+
+The key is stored privately in `~/.zsh_secrets`. `lk ollama key status` checks whether one is configured without revealing it.
 
 ## The opinionated installer
 
