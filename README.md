@@ -169,7 +169,7 @@ webterm
 
 With `ttyd` and Tailscale available, it starts a writable Zsh terminal on local port 7681 and exposes it through Tailscale Serve on HTTPS port 8443. The point is not to invent remote administration; it is to make your own terminal available to your own devices with a tiny, memorable gesture.
 
-## Install from GitHub
+# Install from GitHub
 
 The dependable route is deliberately simple.
 
@@ -210,8 +210,6 @@ cd <the-folder-that-was-created>
 chmod +x install.sh
 ./install.sh
 ```
-
-LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
 
 ### Optional Ollama web search
 
