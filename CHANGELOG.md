@@ -1,5 +1,11 @@
 # LOOK Shell changelog
 
+## 3.1.3
+
+- Make Ollama model choice host-aware: keep the preferred model when installed on the selected host, otherwise use a resident or installed model instead of surfacing Ollama's model-not-found 404.
+- Restore `O open with` to the wrapped interactive filter/select footer; the action itself was never removed.
+
+
 ## 3.1.2 — Tailscale permission handoff
 
 - `lk ollama share` keeps the localhost Host-rewrite proxy alive when Tailscale Serve requires root/operator permission.

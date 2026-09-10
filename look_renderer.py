@@ -845,14 +845,14 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                         f'  {GRAY}{len(matches)} {match_word} · {len(marked)} marked{RESET}')
                 action_parts=['J K L ; move','Tab mark','A all','Enter open',
                               'C copy→','B clipboard','M move','R remove',
-                              'Y path','G go','Esc clear']
+                              'O open with','Y path','G go','Esc clear']
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
                 status=(f'  {CYAN}{BOLD}SELECT{RESET} {WHITE}{name}{RESET} {GRAY}· {kind} · {len(marked)} marked{RESET}')
                 action_parts=['J K L ; move','Tab mark','Enter open',
                               'C copy→','B clipboard','M move','R remove',
-                              'Y path','G go','Esc filter','q quit']
+                              'O open with','Y path','G go','Esc filter','q quit']
             elif query:
                 status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}{RESET}'
                         f'  {GRAY}{last}/{len(current)}{RESET}')
