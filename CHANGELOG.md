@@ -1,5 +1,12 @@
 # LOOK Shell changelog
 
+## 3.0.1 — complete mark toggle
+
+- `A` now toggles the entire current match set: mark all when any are unmarked; clear all when all are already marked.
+- This works with live filters, so `A` can select or deselect exactly the visible match set.
+- No other selection, clipboard, navigation, undo, installer, or LO behavior changed.
+
+
 ## 3.0.0-beta.16 — onboarding and installer
 
 No filesystem/browser grammar changed.

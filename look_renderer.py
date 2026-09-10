@@ -908,9 +908,14 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
                     # Ignore other terminal escape sequences without leaving filter mode.
                     pass
                 elif key=='A' and matches:
-                    for path in matches: marked.add(path.resolve())
+                    resolved={path.resolve() for path in matches}
+                    if resolved.issubset(marked):
+                        marked.difference_update(resolved)
+                        notice=f'{len(matches)} unmarked'
+                    else:
+                        marked.update(resolved)
+                        notice=f'{len(matches)} marked'
                     current=rebuild(query,selected_path(),None,marked) if rebuild else current
-                    notice=f'{len(matches)} marked'
                 elif key=='\t' and matches:
                     picked=selected_path()
                     if picked:

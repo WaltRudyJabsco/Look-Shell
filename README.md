@@ -28,12 +28,12 @@ Look around the current directory:
 l
 ```
 
-Type ordinary fragments to filter. `Tab` marks things; `A` marks every current match. With no marks, actions apply to the highlighted object. With marks, they apply to the marked set.
+Type ordinary fragments to filter. `Tab` marks things; `A` toggles all current matches: mark them all, or clear them all when they are already marked. With no marks, actions apply to the highlighted object. With marks, they apply to the marked set.
 
 ```text
 Enter    open / enter folder
 Tab      mark or unmark
-A        mark all matches
+A        mark / clear all matches
 B        copy the actual file(s) to the desktop clipboard
 Y        copy path(s) as text
 C        copy to another filesystem location
