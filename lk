@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.0-beta.15"
+VERSION="3.0.0-beta.16"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -306,7 +306,7 @@ def _doctor_body():
     import json
     import urllib.request
 
-    tools=["zsh","python3","git","zoxide","fzf","nvim","bat","fortune","cowsay"]
+    tools=["zsh","python3","git","zoxide","fzf","fd","nvim","bat","fortune","cowsay","chafa","pdftotext","ttyd","lsof"]
     checks=[(x,shutil.which(x) is not None) for x in tools]
     checks.append(("neofetch/fastfetch", bool(shutil.which("neofetch") or shutil.which("fastfetch"))))
     files=[("~/.zshrc",(HOME/".zshrc").exists()),
@@ -2779,6 +2779,15 @@ def _edit_file(path):
     if not editor:
         print("LOOK: no editor found (set $EDITOR).")
         return 1
+    if Path(editor).name=="nvim":
+        flag=STATE_DIR/"nvim_intro"
+        if not flag.exists():
+            print("\nLOOK is opening Neovim.\nTo leave: Esc  :q  Enter\nYou'll only be told this once.\n")
+            try:
+                flag.parent.mkdir(parents=True,exist_ok=True)
+                flag.touch()
+            except OSError:
+                pass
     try:
         return subprocess.call([editor,str(path)])
     except OSError as exc:

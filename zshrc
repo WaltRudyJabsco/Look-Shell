@@ -176,6 +176,20 @@ mkd() {
   builtin cd -- "$1"
 }
 
+# Neovim's most famous usability bug is not knowing how to leave it.
+# LOOK teaches the escape hatch once, then never interrupts again.
+_look_nvim_intro() {
+  local flag="$HOME/.local/share/look/nvim_intro"
+  [[ -e "$flag" ]] && return
+  print ''
+  print -P '%F{cyan}%BLOOK is opening Neovim.%b%f'
+  print 'To leave: Esc  :q  Enter'
+  print "You'll only be told this once."
+  print ''
+  mkdir -p -- "${flag:h}"
+  : >| "$flag"
+}
+
 # ── Fuzzy files ──────────────────────────────────────────────────────────────
 displayFZFFiles() {
   fzf --preview 'bat --theme=gruvbox-dark --color=always --style=header,grid --line-range :400 -- {}'
@@ -185,7 +199,10 @@ fznv() {
   (( $+commands[nvim] )) || return 127
   local selection
   selection=$(displayFZFFiles) || return
-  [[ -n "$selection" ]] && nvim -- "$selection"
+  if [[ -n "$selection" ]]; then
+    _look_nvim_intro
+    nvim -- "$selection"
+  fi
 }
 
 # Global retrieval: find from anywhere, then hand the result to LOOK.
@@ -363,6 +380,10 @@ commands() { "$HOME/.local/bin/lk" help; }
 alias lo='lk o'
 
 webterm() {
+  (( $+commands[ttyd] )) || { print "LOOK: webterm needs ttyd. Re-run the LOOK installer."; return 127; }
+  (( $+commands[tailscale] )) || { print "LOOK: webterm needs Tailscale. Re-run ./install.sh or install Tailscale."; return 127; }
+  (( $+commands[lsof] )) || { print "LOOK: webterm needs lsof. Re-run the LOOK installer."; return 127; }
+
   if ! lsof -iTCP:7681 -sTCP:LISTEN >/dev/null 2>&1; then
     ttyd -W zsh >/tmp/ttyd.log 2>&1 &
   fi

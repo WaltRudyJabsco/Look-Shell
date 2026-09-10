@@ -497,6 +497,15 @@ def open_default(path:Path)->tuple[bool,str]:
 
 def edit_path(path:Path)->None:
     editor=os.environ.get('EDITOR') or ('nvim' if shutil.which('nvim') else 'vi')
+    if Path(editor).name=='nvim':
+        flag=Path.home()/'.local/share/look/nvim_intro'
+        if not flag.exists():
+            print("\nLOOK is opening Neovim.\nTo leave: Esc  :q  Enter\nYou'll only be told this once.\n")
+            try:
+                flag.parent.mkdir(parents=True,exist_ok=True)
+                flag.touch()
+            except OSError:
+                pass
     try: subprocess.call([editor,str(path)])
     except OSError as e: print(f'look: cannot edit {path}: {e}',file=sys.stderr)
 
