@@ -20,16 +20,6 @@ Esc      back out
 
 LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
 
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
-![LOOK Shell AI](screenshots/LOOK_AI.png)
-
-![LOOK Shell home](screenshots/LOOK_home.png)
-
 ## Five minutes with LOOK
 
 Look around the current directory:
@@ -168,6 +158,18 @@ webterm
 
 With `ttyd` and Tailscale available, it starts a writable Zsh terminal on local port 7681 and exposes it through Tailscale Serve on HTTPS port 8443. The point is not to invent remote administration; it is to make your own terminal available to your own devices with a tiny, memorable gesture.
 
+## Install the latest GitHub release
+
+For GitHub, publish the release asset with the stable name **`look-shell.zip`**. Then the newest release always has one copy/paste URL:
+
+```sh
+curl -L https://github.com/WaltRudyJabsco/Look-Shell/releases/latest/download/look-shell.zip -o look-shell.zip
+unzip look-shell.zip
+cd look-shell-*
+chmod +x install.sh
+./install.sh
+```
+
 ## The opinionated installer
 
 A fresh LOOK machine should behave like the LOOK we actually use.
@@ -195,6 +197,20 @@ Two larger choices are offered separately:
 - **AI:** Ollama is offered with a default of No. LOOK works without AI; `lo` becomes available when Ollama does.
 
 For unattended installs, `--yes` accepts both optional offers. `--no-optional` installs only the workstation.
+
+### Uninstall cleanly
+
+LOOK has an exit door from the beginning:
+
+```sh
+lk uninstall
+```
+
+The uninstaller removes LOOK itself and restores the pre-LOOK `.zshrc` recorded by the installer. Before restoring it, LOOK preserves the current `.zshrc` as a timestamped `~/.zshrc.look-uninstalled.*` file so any edits made while using LOOK are still recoverable. `~/.zsh_secrets` is always preserved.
+
+The installer also records exactly which Homebrew/Linuxbrew packages and shell add-on directories **it** created. During uninstall, LOOK offers to remove only those recorded dependencies. Anything that already existed before LOOK is left alone. Older LOOK installations without an ownership manifest err on the safe side and leave dependencies installed.
+
+LOOK never automatically removes Homebrew/Linuxbrew itself.
 
 ### The Neovim joke, fixed
 

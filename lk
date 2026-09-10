@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.1"
+VERSION="3.0.2"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -2944,6 +2944,123 @@ def inspect_anything(term):
     return 1
 
 
+
+def _confirm(prompt):
+    try:
+        answer=input(prompt).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y","yes"}
+
+def uninstall():
+    """Remove LOOK without guessing ownership of the user's existing tools."""
+    manifest_path=STATE_DIR/"install_manifest.json"
+    try:
+        manifest=json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    except Exception:
+        manifest={}
+
+    print(_c("LOOK uninstall", "36"))
+    print()
+    print("This will remove LOOK's launcher/state and restore the pre-LOOK ~/.zshrc when a recorded backup exists.")
+    print("~/.zsh_secrets is always preserved.")
+    print()
+    if not _confirm("Uninstall LOOK? [y/N] "):
+        print("cancelled")
+        return 0
+
+    packages=[str(x) for x in manifest.get("packages",[]) if str(x).strip()]
+    created_dirs=[Path(x).expanduser() for x in manifest.get("created_dirs",[]) if str(x).strip()]
+    zsh_backup=str(manifest.get("zsh_backup","")).strip()
+
+    remove_owned=False
+    if packages or created_dirs:
+        print()
+        if packages:
+            print("Packages LOOK recorded as installing:")
+            print("  " + " ".join(packages))
+        if created_dirs:
+            print("Shell add-ons LOOK recorded as creating:")
+            for p in created_dirs:
+                print(f"  {p}")
+        print()
+        remove_owned=_confirm("Also remove these LOOK-installed packages/add-ons? [y/N] ")
+    elif not manifest:
+        print()
+        print("No install ownership manifest exists (this LOOK predates tracking).")
+        print("Packages and shell add-ons will be left untouched.")
+
+    # Preserve the current LOOK-era zshrc before restoring anything. This makes
+    # post-install user edits recoverable even when the original backup is restored.
+    current_zsh=HOME/".zshrc"
+    if current_zsh.exists():
+        stamp=time.strftime("%Y%m%d-%H%M%S")
+        preserved=HOME/f".zshrc.look-uninstalled.{stamp}"
+        try:
+            shutil.copy2(current_zsh,preserved)
+            print(f"preserved current ~/.zshrc → {preserved}")
+        except OSError as e:
+            print(f"LOOK: could not preserve current ~/.zshrc: {e}")
+            return 1
+
+    if zsh_backup and Path(zsh_backup).expanduser().exists():
+        try:
+            shutil.copy2(Path(zsh_backup).expanduser(),current_zsh)
+            print(f"restored ~/.zshrc ← {zsh_backup}")
+        except OSError as e:
+            print(f"LOOK: could not restore ~/.zshrc: {e}")
+            return 1
+    else:
+        # Fresh machines may not have had a pre-LOOK zshrc.
+        try:
+            if current_zsh.exists():
+                current_zsh.unlink()
+            print("removed LOOK ~/.zshrc (no pre-LOOK backup was recorded)")
+        except OSError as e:
+            print(f"LOOK: could not remove ~/.zshrc: {e}")
+            return 1
+
+    if remove_owned:
+        brew=shutil.which("brew")
+        if packages and brew:
+            for pkg in packages:
+                result=subprocess.run([brew,"uninstall",pkg],text=True)
+                if result.returncode:
+                    print(f"LOOK: brew left {pkg} installed")
+        elif packages:
+            print("LOOK: brew is unavailable; recorded packages were left installed.")
+
+        # Remove deepest paths first. Never recurse outside the exact paths the
+        # installer recorded as newly created by LOOK.
+        for p in sorted(created_dirs,key=lambda x:len(x.parts),reverse=True):
+            try:
+                if p.exists():
+                    shutil.rmtree(p)
+                    print(f"removed {p}")
+            except OSError as e:
+                print(f"LOOK: could not remove {p}: {e}")
+
+    # Preserve user secrets explicitly, even if LOOK created the original example.
+    launcher=HOME/".local/bin/lk"
+    try:
+        if launcher.is_symlink() or launcher.exists():
+            launcher.unlink()
+    except OSError as e:
+        print(f"LOOK: could not remove {launcher}: {e}")
+
+    # The running process may safely remove its own installed source on Unix.
+    try:
+        if STATE_DIR.exists():
+            shutil.rmtree(STATE_DIR)
+    except OSError as e:
+        print(f"LOOK: could not completely remove {STATE_DIR}: {e}")
+        return 1
+
+    print()
+    print("LOOK removed. Open a new shell or run: exec zsh")
+    return 0
+
 def main():
     # `lk o` remains the chat verb. In v2, bare `lk ollama` is inspection;
     # adding search/a prompt keeps the historical long-form chat spelling useful.
@@ -2994,6 +3111,7 @@ def main():
         if len(rest)!=1: return 2
         print(_action_result(_journal_mkdir(rest[0]))); return 0
     if cmd=="doctor": return doctor()
+    if cmd=="uninstall": return uninstall()
     if cmd=="config":
         print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {_preferred_ollama_model()}\n  ollama models {OLLAMA_MODELS_FILE}")
         return 0

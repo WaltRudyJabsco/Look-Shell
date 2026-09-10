@@ -1,5 +1,16 @@
 # LOOK Shell changelog
 
+## 3.0.2 — clean exit
+
+- Adds `lk uninstall`.
+- Installer records exact package/add-on ownership for safe removal later.
+- Uninstall restores the recorded pre-LOOK `.zshrc`, while preserving the current LOOK-era `.zshrc` as a timestamped recovery copy.
+- `~/.zsh_secrets` is never removed.
+- Homebrew/Linuxbrew itself is never automatically removed.
+- README adds a copy/paste GitHub `releases/latest/download/look-shell.zip` installation path.
+- No browser, clipboard, mark, navigation, undo, or LO grammar changed.
+
+
 ## 3.0.1 — complete mark toggle
 
 - `A` now toggles the entire current match set: mark all when any are unmarked; clear all when all are already marked.
