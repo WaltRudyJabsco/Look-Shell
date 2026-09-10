@@ -2,7 +2,14 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.0-beta.13"
+VERSION="3.0.0-beta.15"
+
+LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
+       ██║      ██║ ██╔╝
+       ██║      █████╔╝
+       ██║      ██╔═██╗
+       ███████╗ ██║  ██╗
+       ╚══════╝ ╚═╝  ╚═╝"""
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -295,37 +302,6 @@ def home():
     print(f"{_c('l','36')} look around   {_c('lo','36')} ask   {_c('lk','36')} inspect   {_c('lh','36')} home")
     return 0
 
-def _doctor_logo():
-    """Return compact OS identity art from the installed fetch tool."""
-    # fastfetch is preferred on fresh LOOK installs; neofetch remains supported.
-    if shutil.which("fastfetch"):
-        try:
-            r=subprocess.run(
-                ["fastfetch","--logo-only"],
-                capture_output=True,text=True,timeout=1.5
-            )
-            if r.returncode==0 and r.stdout.strip():
-                return r.stdout.rstrip()
-        except (OSError,subprocess.SubprocessError):
-            pass
-    if shutil.which("neofetch"):
-        try:
-            # Neofetch has no clean logo-only switch; disable every info field.
-            r=subprocess.run(
-                ["neofetch","--stdout","--disable","title","distro","model","kernel",
-                 "uptime","packages","shell","resolution","de","wm","wm_theme",
-                 "theme","icons","terminal","terminal_font","cpu","gpu","memory",
-                 "gpu_driver","disk","battery","font","song","local_ip","public_ip",
-                 "users","locale"],
-                capture_output=True,text=True,timeout=1.5
-            )
-            if r.returncode==0 and r.stdout.strip():
-                return r.stdout.rstrip()
-        except (OSError,subprocess.SubprocessError):
-            pass
-    return ""
-
-
 def _doctor_body():
     import json
     import urllib.request
@@ -351,10 +327,8 @@ def _doctor_body():
     memory_ok = _ensure_memory_file()
     web_key = bool(os.environ.get("OLLAMA_API_KEY"))
 
-    print(f"LOOK {VERSION}")
-    logo=_doctor_logo()
-    if logo:
-        print(logo)
+    print(_c(LOOK_WORDMARK, "36"))
+    print(_c(f"LOOK {VERSION} · doctor", "2"))
     print("─"*46)
     print(f"\nSYSTEM\n  {platform.system()} {platform.release()} · {platform.machine()}")
     print("\nTOOLS")
