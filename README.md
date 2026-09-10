@@ -349,7 +349,11 @@ Presentation may evolve. Muscle memory should not.
 
 ## FutureCrash // Zero
 
+![LOOK Shell FutureCrash](screenshots/LOOK_Shell_future.png)
+
 LOOK pairs naturally with FutureCrash -- https://github.com/WaltRudyJabsco/FutureCrash -- a separate terminal project built around the same keyboard-first philosophy. Future Crash provides a playful, interactive front end for local Ollama models—part terminal oracle, part system companion—with web search, observations, fortunes, and LOOK-aware integration. Neither project requires the other, but together they turn the terminal into something closer to a small personal computing environment: LOOK handles finding, navigating, inspecting, and acting; Future Crash gives the local AI a place to live.
+
+https://github.com/WaltRudyJabsco/FutureCrash/releases
 
 ## Reference
 
