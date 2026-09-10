@@ -29,6 +29,7 @@ LOOK began as a better `ls`. It became a semantic control layer for the terminal
 ![LOOK Shell AI](screenshots/LOOK_AI.png)
 
 ![LOOK Shell home](screenshots/LOOK_home.png)
+
 ## Five minutes with LOOK
 
 Look around the current directory:
