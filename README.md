@@ -20,17 +20,6 @@ Esc      back out
 
 LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
 
-
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
-![LOOK Shell AI](screenshots/LOOK_AI.png)
-
-![LOOK Shell home](screenshots/LOOK_home.png)
-
 ## Five minutes with LOOK
 
 Look around the current directory:
@@ -169,15 +158,49 @@ webterm
 
 With `ttyd` and Tailscale available, it starts a writable Zsh terminal on local port 7681 and exposes it through Tailscale Serve on HTTPS port 8443. The point is not to invent remote administration; it is to make your own terminal available to your own devices with a tiny, memorable gesture.
 
-## Install the latest GitHub release
+## Install from GitHub
+
+The dependable route is deliberately simple.
+
+### From a Release
+
+1. Open the repository's **Releases** page.
+2. Download the LOOK ZIP attached to the newest release.
+3. Unzip it.
+4. In Terminal, `cd` into the folder you just unzipped.
+5. Run:
 
 ```sh
-curl -L https://github.com/WaltRudyJabsco/Look-Shell/releases/latest/download/look-shell.zip -o look-shell.zip
-unzip look-shell.zip
-cd look-shell-*
 chmod +x install.sh
 ./install.sh
 ```
+
+GitHub downloads do not always preserve executable permissions, which is why the `chmod` step is included.
+
+### From the green Code button
+
+You can also use **Code → Download ZIP** on the repository page. Unzip it, enter the resulting folder (GitHub will usually name it something like `look-shell-main`), then run the same two commands:
+
+```sh
+chmod +x install.sh
+./install.sh
+```
+
+The installer uses its own location as the source directory, so the checkout folder can have any name. You do **not** need to rename it.
+
+### Terminal-only download
+
+If you want to use `curl`, copy the actual ZIP URL shown by GitHub for the release you want rather than relying on a guessed asset name. For example:
+
+```sh
+curl -L "PASTE-THE-RELEASE-ZIP-URL-HERE" -o look-shell.zip
+unzip look-shell.zip
+cd <the-folder-that-was-created>
+chmod +x install.sh
+./install.sh
+```
+
+LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
 
 ## The opinionated installer
 

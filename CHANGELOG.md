@@ -1,5 +1,14 @@
 # LOOK Shell changelog
 
+## 3.0.3 — GitHub install instructions
+
+- Removes the brittle guessed `/releases/latest/download/look-shell.zip` recipe.
+- Documents two dependable install paths: GitHub Releases and Code → Download ZIP.
+- Explains why `chmod +x install.sh` is needed after GitHub ZIP downloads.
+- Makes clear that the installer is folder-name agnostic; `look-shell-main` and versioned release folders both work.
+- No LOOK interaction, clipboard, selection, undo, uninstall, installer dependency, or LO behavior changed.
+
+
 ## 3.0.2 — clean exit
 
 - Adds `lk uninstall`.
