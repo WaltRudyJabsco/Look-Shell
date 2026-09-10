@@ -171,17 +171,62 @@ run cp "$ROOT/look_renderer.py" "$HOME/.local/share/look/look_renderer.py"
 run chmod +x "$HOME/.local/share/look/lk"
 if ((!DRY)); then ln -sfn "$HOME/.local/share/look/lk" "$HOME/.local/bin/lk"; fi
 
+LOOK_ZSH_DIR="$HOME/.config/look"
+LOOK_ZSH_FILE="$LOOK_ZSH_DIR/look.zsh"
+LOOK_HOOK_START="# >>> LOOK Shell >>>"
+LOOK_HOOK_END="# <<< LOOK Shell <<<"
+
+run mkdir -p "$LOOK_ZSH_DIR"
+
 if [[ -f "$HOME/.zshrc" ]]; then
   B="$HOME/.zshrc.backup.$(date +%Y%m%d-%H%M%S)"
   run cp "$HOME/.zshrc" "$B"
   ZSH_BACKUP="$B"
   echo "Backed up ~/.zshrc → $B"
 fi
-run cp "$ROOT/zshrc" "$HOME/.zshrc"
+
+# LOOK owns this fragment; the user's ~/.zshrc remains theirs.
+run cp "$ROOT/zshrc" "$LOOK_ZSH_FILE"
+
+if ((!DRY)); then
+  touch "$HOME/.zshrc"
+  python3 - "$HOME/.zshrc" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text() if path.exists() else ""
+start = "# >>> LOOK Shell >>>"
+end = "# <<< LOOK Shell <<<"
+
+while start in text:
+    a = text.find(start)
+    b = text.find(end, a)
+    if b < 0:
+        text = text[:a].rstrip() + "\n"
+        break
+    b += len(end)
+    left = text[:a].rstrip()
+    right = text[b:].lstrip("\n")
+    text = (left + "\n\n" if left else "") + right
+
+hook = """# >>> LOOK Shell >>>
+[[ -f "$HOME/.config/look/look.zsh" ]] && source "$HOME/.config/look/look.zsh"
+# <<< LOOK Shell <<<
+"""
+text = text.rstrip()
+if text:
+    text += "\n\n"
+text += hook
+path.write_text(text)
+PY
+fi
+
 [[ -f "$HOME/.zsh_secrets" ]] || run cp "$ROOT/zsh_secrets.example" "$HOME/.zsh_secrets"
 run chmod 600 "$HOME/.zsh_secrets"
 
 if ((!DRY)); then
+  zsh -n "$LOOK_ZSH_FILE"
   zsh -n "$HOME/.zshrc"
 
   # Record only what this installer can prove it added. `lk uninstall` uses

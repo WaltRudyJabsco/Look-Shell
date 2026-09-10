@@ -1,5 +1,16 @@
 # LOOK Shell changelog
 
+## 3.1.6 — polite shell integration
+
+- Installer no longer replaces `~/.zshrc` wholesale.
+- Existing `.zshrc` is still timestamp-backed up before any edit.
+- LOOK shell configuration now lives in `~/.config/look/look.zsh`.
+- Installer adds/normalizes one marked source block in the user's existing `.zshrc`.
+- Reinstall/update refreshes only LOOK's owned fragment.
+- `lk uninstall` removes the marked hook and fragment; legacy installs retain backup restoration behavior.
+- No LOOK interaction, Ollama, clipboard, filter, navigation, or file-operation behavior changed.
+
+
 ## 3.1.5 — filter footer label
 
 - Restore `E edit` to the interactive filter/select footer. Edit behavior was already intact; only its visible command hint had been lost.

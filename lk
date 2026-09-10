@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.5"
+VERSION="3.1.6"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -3460,22 +3460,51 @@ def uninstall():
             print(f"LOOK: could not preserve current ~/.zshrc: {e}")
             return 1
 
-    if zsh_backup and Path(zsh_backup).expanduser().exists():
+    look_hook_start="# >>> LOOK Shell >>>"
+    look_hook_end="# <<< LOOK Shell <<<"
+    look_fragment=HOME/".config/look/look.zsh"
+
+    modern_hook=False
+    if current_zsh.exists():
         try:
-            shutil.copy2(Path(zsh_backup).expanduser(),current_zsh)
-            print(f"restored ~/.zshrc ← {zsh_backup}")
+            text=current_zsh.read_text()
+            if look_hook_start in text:
+                modern_hook=True
+                while look_hook_start in text:
+                    a=text.find(look_hook_start)
+                    b=text.find(look_hook_end,a)
+                    if b<0:
+                        text=text[:a].rstrip()+"\n"
+                        break
+                    b+=len(look_hook_end)
+                    left=text[:a].rstrip()
+                    right=text[b:].lstrip("\n")
+                    text=(left+"\n\n" if left else "")+right
+                current_zsh.write_text(text.rstrip()+"\n" if text.strip() else "")
+                print("removed LOOK hook from ~/.zshrc")
         except OSError as e:
-            print(f"LOOK: could not restore ~/.zshrc: {e}")
+            print(f"LOOK: could not update ~/.zshrc: {e}")
             return 1
-    else:
-        # Fresh machines may not have had a pre-LOOK zshrc.
-        try:
-            if current_zsh.exists():
-                current_zsh.unlink()
-            print("removed LOOK ~/.zshrc (no pre-LOOK backup was recorded)")
-        except OSError as e:
-            print(f"LOOK: could not remove ~/.zshrc: {e}")
-            return 1
+
+    if not modern_hook:
+        if zsh_backup and Path(zsh_backup).expanduser().exists():
+            try:
+                shutil.copy2(Path(zsh_backup).expanduser(),current_zsh)
+                print(f"restored legacy ~/.zshrc ← {zsh_backup}")
+            except OSError as e:
+                print(f"LOOK: could not restore ~/.zshrc: {e}")
+                return 1
+        else:
+            print("LOOK: no managed ~/.zshrc hook or legacy backup found; leaving ~/.zshrc untouched")
+
+    try:
+        if look_fragment.exists():
+            look_fragment.unlink()
+        look_dir=look_fragment.parent
+        if look_dir.exists() and not any(look_dir.iterdir()):
+            look_dir.rmdir()
+    except OSError as e:
+        print(f"LOOK: could not completely remove shell fragment: {e}")
 
     if remove_owned:
         brew=shutil.which("brew")
