@@ -262,6 +262,23 @@ lk ollama key
 
 The key is stored privately in `~/.zsh_secrets`. `lk ollama key status` checks whether one is configured without revealing it.
 
+## Shell configuration: integrate, don't replace
+
+LOOK keeps `~/.zshrc` user-owned. On install/update it:
+
+1. makes a timestamped backup of the current `~/.zshrc`;
+2. installs LOOK's shell fragment at `~/.config/look/look.zsh`;
+3. adds one clearly marked source hook to the existing `.zshrc`;
+4. leaves every other line untouched.
+
+```zsh
+# >>> LOOK Shell >>>
+[[ -f "$HOME/.config/look/look.zsh" ]] && source "$HOME/.config/look/look.zsh"
+# <<< LOOK Shell <<<
+```
+
+Re-running the installer refreshes only LOOK's fragment and normalizes the hook to one copy. `lk uninstall` removes that hook and fragment; legacy installs that replaced `.zshrc` still use the recorded backup restoration path.
+
 ## The opinionated installer
 
 A fresh LOOK machine should behave like the LOOK we actually use.
