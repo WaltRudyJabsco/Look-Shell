@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.5"
+VERSION="3.1.0"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -22,7 +22,278 @@ MEMORY_QUEUE=STATE_DIR/"memory_queue"
 MEMORY_WORKER_LOCK=STATE_DIR/"memory_worker.lock"
 OLLAMA_MODEL_FILE=STATE_DIR/"ollama_model"
 OLLAMA_MODELS_FILE=STATE_DIR/"ollama_models.json"
+OLLAMA_HOSTS_FILE=STATE_DIR/"ollama_hosts.json"
+LOCAL_OLLAMA_URL="http://127.0.0.1:11434"
 RECENT_MEMORY_SLOTS=5
+
+
+def _normalize_ollama_url(value):
+    from urllib.parse import urlparse
+    value=str(value or "").strip().rstrip("/")
+    if not value:
+        return LOCAL_OLLAMA_URL
+    if "://" not in value:
+        value=f"http://{value}"
+    parsed=urlparse(value)
+    if not parsed.hostname:
+        raise ValueError("invalid Ollama host")
+    if parsed.port is None and parsed.scheme=="http":
+        value=value + ":11434"
+    return value.rstrip("/")
+
+
+def _load_ollama_hosts():
+    data={"default":"local","hosts":{}}
+    try:
+        loaded=json.loads(OLLAMA_HOSTS_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded,dict):
+            data["default"]=str(loaded.get("default") or "local")
+            hosts=loaded.get("hosts") or {}
+            if isinstance(hosts,dict):
+                for name,item in hosts.items():
+                    if isinstance(item,dict) and item.get("url"):
+                        try:
+                            data["hosts"][str(name)]={"url":_normalize_ollama_url(item["url"])}
+                        except ValueError:
+                            pass
+    except (OSError,ValueError,TypeError):
+        pass
+    data["hosts"]["local"]={"url":LOCAL_OLLAMA_URL}
+    if data["default"] not in data["hosts"]:
+        data["default"]="local"
+    return data
+
+
+def _save_ollama_hosts(data):
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    payload={
+        "default":data.get("default","local"),
+        "hosts":{k:v for k,v in (data.get("hosts") or {}).items() if k!="local"},
+    }
+    tmp=OLLAMA_HOSTS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    os.chmod(tmp,0o600)
+    tmp.replace(OLLAMA_HOSTS_FILE)
+    os.chmod(OLLAMA_HOSTS_FILE,0o600)
+
+
+def _ollama_base(override=None):
+    if override:
+        return _normalize_ollama_url(override)
+    env=os.environ.get("OLLAMA_HOST","").strip()
+    if env:
+        return _normalize_ollama_url(env)
+    data=_load_ollama_hosts()
+    return data["hosts"].get(data["default"],{"url":LOCAL_OLLAMA_URL})["url"]
+
+
+def _ollama_host_name(base=None):
+    base=_ollama_base(base)
+    data=_load_ollama_hosts()
+    for name,item in data["hosts"].items():
+        if item.get("url")==base:
+            return name
+    try:
+        from urllib.parse import urlparse
+        return urlparse(base).hostname or base
+    except Exception:
+        return base
+
+
+def _is_local_ollama(base):
+    from urllib.parse import urlparse
+    try:
+        return (urlparse(base).hostname or "").lower() in {"127.0.0.1","localhost","::1"}
+    except Exception:
+        return False
+
+
+def _probe_ollama(base,timeout=.35):
+    import urllib.request
+    try:
+        with urllib.request.urlopen(base.rstrip("/")+"/api/tags",timeout=timeout) as response:
+            return response.status < 400
+    except Exception:
+        return False
+
+
+def _tailscale_candidates():
+    exe=shutil.which("tailscale")
+    if not exe:
+        return []
+    try:
+        proc=subprocess.run([exe,"status","--json"],capture_output=True,text=True,timeout=2)
+        if proc.returncode!=0:
+            return []
+        status=json.loads(proc.stdout)
+    except (OSError,subprocess.SubprocessError,ValueError,TypeError):
+        return []
+
+    peers=status.get("Peer") or {}
+    nodes=list(peers.values()) if isinstance(peers,dict) else list(peers) if isinstance(peers,list) else []
+    out=[]; seen=set()
+    for node in nodes:
+        if not isinstance(node,dict) or node.get("Online") is False:
+            continue
+        hostname=str(node.get("HostName") or "").strip()
+        dns=str(node.get("DNSName") or "").strip().rstrip(".")
+        ips=node.get("TailscaleIPs") or []
+        name=hostname or (dns.split(".")[0] if dns else "")
+        if not name:
+            continue
+        candidates=[]
+        if dns:
+            candidates.append(("serve",f"https://{dns}"))
+        for ip in ips[:2]:
+            candidates.append(("direct",f"http://{ip}:11434"))
+        for transport,url in candidates:
+            key=(name,url)
+            if key not in seen:
+                seen.add(key)
+                out.append({"name":name,"url":url,"transport":transport})
+    return out
+
+
+def _discover_ollama_hosts():
+    import concurrent.futures
+    candidates=_tailscale_candidates()
+    if not candidates:
+        return []
+    found=[]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12,len(candidates))) as pool:
+        futures={pool.submit(_probe_ollama,item["url"],.45):item for item in candidates}
+        for future,item in futures.items():
+            try:
+                if future.result():
+                    found.append(item)
+            except Exception:
+                pass
+    best={}
+    for item in found:
+        old=best.get(item["name"])
+        if old is None or (item["transport"]=="serve" and old["transport"]!="serve"):
+            best[item["name"]]=item
+    return sorted(best.values(),key=lambda x:x["name"].casefold())
+
+
+def _resolve_ollama_host(token):
+    token=str(token or "").strip()
+    if not token:
+        return None,None
+    if token=="local":
+        return "local",LOCAL_OLLAMA_URL
+    data=_load_ollama_hosts()
+    if token in data["hosts"]:
+        return token,data["hosts"][token]["url"]
+    if "://" in token:
+        try:
+            url=_normalize_ollama_url(token)
+            from urllib.parse import urlparse
+            return (urlparse(url).hostname or "remote"),url
+        except ValueError:
+            return None,None
+    for item in _discover_ollama_hosts():
+        if item["name"].casefold()==token.casefold():
+            return item["name"],item["url"]
+    return None,None
+
+
+def ollama_hosts(args):
+    args=list(args or [])
+    data=_load_ollama_hosts()
+
+    if args and args[0]=="forget":
+        if len(args)<2:
+            print("LOOK OLLAMA · host name required")
+            return 1
+        name=args[1]
+        if name=="local":
+            print("LOOK OLLAMA · local cannot be removed")
+            return 1
+        if name not in data["hosts"]:
+            print(f"LOOK OLLAMA · unknown host: {name}")
+            return 1
+        data["hosts"].pop(name,None)
+        if data["default"]==name:
+            data["default"]="local"
+        _save_ollama_hosts(data)
+        print(f"✓ forgot Ollama host · {name}")
+        return 0
+
+    if len(args)>=2 and args[0] not in {"list","status"}:
+        name=args[0]
+        try:
+            url=_normalize_ollama_url(args[1])
+        except ValueError:
+            print("LOOK OLLAMA · invalid host URL")
+            return 1
+        data["hosts"][name]={"url":url}
+        data["default"]=name
+        _save_ollama_hosts(data)
+        print(f"✓ Ollama host · {name} · {'ready' if _probe_ollama(url,.6) else 'saved · offline'}")
+        return 0
+
+    if len(args)==1 and args[0] not in {"list","status"}:
+        token=args[0]
+        name,url=_resolve_ollama_host(token)
+        if not url:
+            print(f"LOOK OLLAMA · host not found: {token}")
+            print("  run: lk ollama host")
+            return 1
+        data["hosts"][name]={"url":url}
+        data["default"]=name
+        _save_ollama_hosts(data)
+        print(f"✓ Ollama host · {name}")
+        return 0
+
+    discovered=_discover_ollama_hosts()
+    merged={name:{"url":item["url"],"source":"saved"} for name,item in data["hosts"].items()}
+    for item in discovered:
+        merged.setdefault(item["name"],{"url":item["url"],"source":"tailscale"})
+    current=_ollama_base()
+    current_name=_ollama_host_name(current)
+
+    _title("ollama hosts")
+    print(f"  current  {current_name} · {current}")
+    print()
+    for name in sorted(merged,key=str.casefold):
+        item=merged[name]
+        url=item["url"]
+        state=_c("ready","32") if _probe_ollama(url,.25) else _c("offline","2")
+        marker="✓" if url==current else " "
+        print(f"  {marker} {name:<18} {state:<18} {item['source']} · {url}")
+    if shutil.which("tailscale"):
+        print(f"\n  {_c('Tip','2')} · lo @NAME uses a host for one session")
+    else:
+        print(f"\n  {_c('Tailscale not installed','2')} · local and saved URL hosts still work")
+    return 0
+
+
+def ollama_share(args):
+    args=list(args or [])
+    tailscale=shutil.which("tailscale")
+    if not tailscale:
+        print("LOOK OLLAMA · Tailscale is not installed")
+        return 1
+    if args and args[0]=="status":
+        return subprocess.call([tailscale,"serve","status"])
+    if args and args[0] in {"off","stop"}:
+        proc=subprocess.run([tailscale,"serve","11434","off"])
+        if proc.returncode==0:
+            print("✓ Ollama tailnet share off")
+        return proc.returncode
+
+    if not _probe_ollama(LOCAL_OLLAMA_URL,.6):
+        if _ensure_ollama_server(LOCAL_OLLAMA_URL,allow_start=True) is None:
+            print("LOOK OLLAMA · local server unavailable")
+            return 1
+    print("LOOK OLLAMA · sharing localhost:11434 inside your tailnet")
+    proc=subprocess.run([tailscale,"serve","--bg","11434"])
+    if proc.returncode==0:
+        print("✓ Ollama available to your Tailscale devices")
+        print("  discover it elsewhere with: lk ollama host")
+    return proc.returncode
+
 
 def render(args):
     return subprocess.call([sys.executable,str(RENDERER),*args])
@@ -164,6 +435,8 @@ INSPECT
   lk net               browse network addresses · Y copies IP
   lk tailscale         tailnet status
   lk ollama            Ollama status
+  lk ollama host       list/select local + remote Ollama hosts
+  lk ollama share      share local Ollama inside your tailnet
   lk ollama models     model control panel · Enter select · X enable/disable
   lk ollama test       benchmark current model
   lk ollama test --all compare installed models
@@ -178,6 +451,7 @@ SYSTEM
   lk version           print version
   LOOK_CLASSIC=1 lk    use the frozen classic presentation
   lk o [search] [ASK]  Ollama chat / optional first prompt
+  lk o @HOST [ASK]     use another Ollama host for this session
   lk o --no-start ...  never start a missing local server
   lk help              this glossary
 
@@ -258,7 +532,7 @@ def home():
     except (OSError, subprocess.SubprocessError):
         pass
 
-    base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
+    base=_ollama_base()
     ollama='offline'
     ollama_live=False
     try:
@@ -272,8 +546,10 @@ def home():
         else:
             ollama='ready · idle'
     except Exception:
-        if shutil.which('ollama'):
+        if _is_local_ollama(base) and shutil.which('ollama'):
             ollama='available · idle'
+        elif not _is_local_ollama(base):
+            ollama=f"{_ollama_host_name(base)} · offline"
 
     print(_c(f"LOOK {VERSION}", "1;36"))
     git_tail=''
@@ -313,7 +589,7 @@ def _doctor_body():
            ("~/.zsh_secrets",(HOME/".zsh_secrets").exists()),
            ("LOOK renderer",RENDERER.exists())]
 
-    base = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    base = _ollama_base()
     ollama_bin = shutil.which("ollama") is not None
     server = False
     loaded = []
@@ -1514,14 +1790,14 @@ def _choose_ollama_model(running):
     return preferred, False
 
 
-def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
+def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_override=None, host_name=None):
     """Minimal local chat; optional first prompt and web-search mode."""
     import json
     import urllib.request
 
-    base = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    base = _ollama_base(host_override)
 
-    running = _ensure_ollama_server(base, allow_start=allow_start)
+    running = _ensure_ollama_server(base, allow_start=(allow_start and _is_local_ollama(base)))
     if running is None:
         print("LOOK OLLAMA · server unavailable")
         return 1
@@ -1531,7 +1807,9 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True):
     has_web = bool(os.environ.get("OLLAMA_API_KEY"))
     mode = "LOOK OLLAMA SEARCH" if force_search else "LOOK OLLAMA"
     web_state = "required" if force_search else ("available" if has_web else "off")
+    shown_host=host_name or _ollama_host_name(base)
     print(f"{mode} · {model} · {Path.cwd()}")
+    print(f"host · {shown_host} · {base}")
     if not resident:
         print(f"model · idle · loads on first prompt")
     print(f"web · {web_state} · Ctrl-D to exit · Ctrl-C cancels work\n")
@@ -2197,8 +2475,8 @@ def _ollama_model_rows(base, names, resident, disabled):
 
 def ollama_models(select_model=None):
     """Tiny Ollama control panel: select a model or toggle LOOK benchmark inclusion with X."""
-    base=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434").rstrip("/")
-    if _ensure_ollama_server(base, allow_start=True) is None:
+    base=_ollama_base()
+    if _ensure_ollama_server(base, allow_start=_is_local_ollama(base)) is None:
         print("LOOK OLLAMA · server unavailable")
         return 1
 
@@ -2442,8 +2720,8 @@ def _benchmark_one_model(base, model):
 
 
 def ollama_test(all_models=False):
-    base=os.environ.get("OLLAMA_HOST","http://127.0.0.1:11434").rstrip("/")
-    running=_ensure_ollama_server(base, allow_start=True)
+    base=_ollama_base()
+    running=_ensure_ollama_server(base, allow_start=_is_local_ollama(base))
     if running is None:
         print("LOOK OLLAMA · server unavailable")
         return 1
@@ -2551,10 +2829,12 @@ def inspect_ollama():
     _title('ollama')
     binary=shutil.which('ollama')
     print(f"  binary  {binary or _c('not installed','2')}")
-    base=os.environ.get('OLLAMA_HOST','http://127.0.0.1:11434').rstrip('/')
+    base=_ollama_base()
+    host_name=_ollama_host_name(base)
+    print(f"  host      {host_name} · {base}")
     try:
         with urllib.request.urlopen(base+'/api/ps',timeout=.8) as r: models=json.load(r).get('models',[])
-        print(f"  server    {_c('ready','32')} · {base}")
+        print(f"  server    {_c('ready','32')}")
         print(f"  preferred {_preferred_ollama_model()}")
         if models:
             names=[m.get('name') or m.get('model') or '?' for m in models[:6]]
@@ -2562,7 +2842,7 @@ def inspect_ollama():
         else:
             print(f"  resident  {_c('idle','33')}")
     except Exception:
-        print(f"  server  {_c('offline','33')} · {base}")
+        print(f"  server    {_c('offline','33')}")
     print(f"  web     {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
     pending=len(_memory_job_files())
     if _memory_worker_active():
@@ -3156,19 +3436,31 @@ def main():
         or (
             sys.argv[1] == "ollama"
             and len(sys.argv) >= 3
-            and sys.argv[2] not in {"models","test","key"}
+            and sys.argv[2] not in {"models","test","key","host","hosts","share"}
         )
     ):
         args=sys.argv[2:]
         allow_start=True
+        host_override=None
+        host_name=None
         if args and args[0] == "--no-start":
             allow_start=False
             args=args[1:]
+        if args and args[0].startswith("@") and len(args[0])>1:
+            token=args.pop(0)[1:]
+            host_name,host_override=_resolve_ollama_host(token)
+            if not host_override:
+                print(f"LOOK OLLAMA · host not found: {token}")
+                print("  run: lk ollama host")
+                return 1
         force_search=bool(args and args[0] == "search")
         if force_search:
             args=args[1:]
         initial_prompt=" ".join(args).strip() or None
-        return ollama_chat(force_search=force_search, initial_prompt=initial_prompt, allow_start=allow_start)
+        return ollama_chat(
+            force_search=force_search, initial_prompt=initial_prompt,
+            allow_start=allow_start, host_override=host_override, host_name=host_name
+        )
     a=sys.argv[1:]
     if not a: return render([])
     cmd=a[0]; rest=a[1:]
@@ -3231,6 +3523,10 @@ def main():
     if cmd=="ollama":
         if rest and rest[0]=="key":
             return ollama_key(rest[1:])
+        if rest and rest[0] in {"host","hosts"}:
+            return ollama_hosts(rest[1:])
+        if rest and rest[0]=="share":
+            return ollama_share(rest[1:])
         if rest and rest[0]=="models":
             return ollama_models(rest[1] if len(rest)>1 else None)
         if rest and rest[0]=="test":

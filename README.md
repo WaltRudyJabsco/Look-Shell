@@ -4,11 +4,6 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
-
-![LOOK Shell home](screenshots/LOOK_home.png)
-
-
 The mental model is deliberately physical:
 
 ```text
@@ -23,13 +18,7 @@ lh       come home
 Esc      back out
 ```
 
-LOOK began as a better, smarter `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
-![LOOK Shell AI](screenshots/LOOK_AI.png)
+LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
 
 ## Five minutes with LOOK
 
@@ -169,7 +158,7 @@ webterm
 
 With `ttyd` and Tailscale available, it starts a writable Zsh terminal on local port 7681 and exposes it through Tailscale Serve on HTTPS port 8443. The point is not to invent remote administration; it is to make your own terminal available to your own devices with a tiny, memorable gesture.
 
-# Install from GitHub
+## Install from GitHub
 
 The dependable route is deliberately simple.
 
@@ -210,6 +199,51 @@ cd <the-folder-that-was-created>
 chmod +x install.sh
 ./install.sh
 ```
+
+LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
+
+### Ollama anywhere: local, remote, or tailnet
+
+LOOK 3.1 separates the `lo` interface from the machine doing the inference. Local Ollama remains the default and nothing remote is required.
+
+```sh
+lk ollama host
+```
+
+lists the current host, saved host profiles, and reachable Ollama servers LOOK discovers on your Tailscale peers. Tailscale device hostnames become the profile names automatically.
+
+Select one persistently:
+
+```sh
+lk ollama host workstation
+```
+
+or use it for just one chat session:
+
+```sh
+lo @workstation
+lo @workstation explain this project
+```
+
+Return to the current machine with `lk ollama host local`.
+
+A host can also be saved explicitly:
+
+```sh
+lk ollama host workstation https://workstation.example.ts.net
+```
+
+Remove a saved profile with `lk ollama host forget workstation`.
+
+To share the current machine's localhost Ollama only inside your tailnet:
+
+```sh
+lk ollama share
+```
+
+This uses Tailscale Serve in the background. `lk ollama share status` shows the Serve state and `lk ollama share off` turns off this Ollama share.
+
+Tailscale is optional. Without it, local Ollama and manually saved host URLs continue to work normally. LOOK still speaks the Ollama API only; 3.1 does not add provider-specific OpenAI or Anthropic adapters.
 
 ### Optional Ollama web search
 

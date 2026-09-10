@@ -1,5 +1,16 @@
 # LOOK Shell changelog
 
+## 3.1.0 — Ollama anywhere
+
+- Adds named Ollama host profiles while keeping `local` as the permanent built-in default.
+- `lk ollama host` lists saved hosts and discovers reachable Ollama servers on Tailscale peers using their device hostnames.
+- `lk ollama host NAME` selects a persistent default; `lk ollama host NAME URL` saves/selects an explicit endpoint.
+- `lo @NAME` uses a host for one session without changing the default.
+- `lk ollama share` shares localhost Ollama inside the tailnet through Tailscale Serve; `share status` and `share off` are included.
+- Ollama inspection, model control, benchmarks, web search, memory, and workspace tools follow the selected host.
+- Tailscale remains optional; local LOOK behavior is unchanged when it is absent.
+
+
 ## 3.0.5 — escape polish
 
 - Hidden Ollama key entry: Esc, Ctrl-C, Ctrl-D, or empty Enter cancels cleanly.
