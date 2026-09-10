@@ -171,8 +171,6 @@ With `ttyd` and Tailscale available, it starts a writable Zsh terminal on local 
 
 ## Install the latest GitHub release
 
-For GitHub, publish the release asset with the stable name **`look-shell.zip`**. Then the newest release always has one copy/paste URL:
-
 ```sh
 curl -L https://github.com/WaltRudyJabsco/Look-Shell/releases/latest/download/look-shell.zip -o look-shell.zip
 unzip look-shell.zip
