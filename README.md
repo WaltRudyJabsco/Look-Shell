@@ -4,6 +4,8 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
+![LOOK Shell home](screenshots/LOOK_home.png)
+
 The mental model is deliberately physical:
 
 ```text
@@ -19,6 +21,8 @@ Esc      back out
 ```
 
 LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
+
+![LOOK Shell help](screenshots/LOOK_2_help.png)
 
 ## Five minutes with LOOK
 
@@ -45,6 +49,8 @@ G        leave LOOK and make this the shell's real directory
 Esc      clear / back
 q        quit
 ```
+
+![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 On macOS, `B` uses native clipboard file objects for documents and folders and image data for a single common image, so the result can be pasted into Finder-, Mail-, chat-, and image-aware applications. `Y` is intentionally different: it copies the pathname as text.
 
@@ -128,6 +134,8 @@ LOOK previews text and code directly. If `chafa` is present, common images rende
 
 These are capabilities, not alternate interfaces. A missing preview helper degrades gracefully to text or metadata.
 
+![LOOK Shell AI](screenshots/LOOK_AI.png)
+
 ## LO: local AI with hands, not a shell
 
 If Ollama is installed:
@@ -199,8 +207,7 @@ cd <the-folder-that-was-created>
 chmod +x install.sh
 ./install.sh
 ```
-
-LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
+![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
 ### Ollama anywhere: local, remote, or tailnet
 
