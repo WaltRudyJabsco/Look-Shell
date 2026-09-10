@@ -197,7 +197,7 @@ from pathlib import Path
 state = Path.home()/".local/share/look"
 state.mkdir(parents=True, exist_ok=True)
 manifest = {
-    "version": "3.1.0",
+    "version": "3.1.1",
     "packages": [x for x in os.environ.get("LOOK_MANIFEST_PACKAGES","").splitlines() if x],
     "created_dirs": [x for x in os.environ.get("LOOK_MANIFEST_DIRS","").splitlines() if x],
     "zsh_backup": os.environ.get("LOOK_MANIFEST_ZSH_BACKUP",""),

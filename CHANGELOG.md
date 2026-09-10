@@ -1,5 +1,12 @@
 # LOOK Shell changelog
 
+## 3.1.1 — Ollama share fix
+
+- `lk ollama share` now places a tiny localhost-only proxy between Tailscale Serve and Ollama.
+- The proxy rewrites the public tailnet `Host` header to `localhost:11434`, preserving Ollama's host protection while allowing private Tailscale Serve access.
+- No new dependency, installer layer, command grammar, or unrelated behavior changes.
+
+
 ## 3.1.0 — Ollama anywhere
 
 - Adds named Ollama host profiles while keeping `local` as the permanent built-in default.

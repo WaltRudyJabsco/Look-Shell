@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
+import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid, signal
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.0"
+VERSION="3.1.1"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -23,6 +25,8 @@ MEMORY_WORKER_LOCK=STATE_DIR/"memory_worker.lock"
 OLLAMA_MODEL_FILE=STATE_DIR/"ollama_model"
 OLLAMA_MODELS_FILE=STATE_DIR/"ollama_models.json"
 OLLAMA_HOSTS_FILE=STATE_DIR/"ollama_hosts.json"
+OLLAMA_SHARE_PORT=11435
+OLLAMA_SHARE_PID=STATE_DIR/"ollama_share_proxy.pid"
 LOCAL_OLLAMA_URL="http://127.0.0.1:11434"
 RECENT_MEMORY_SLOTS=5
 
@@ -269,6 +273,103 @@ def ollama_hosts(args):
     return 0
 
 
+
+def _ollama_share_proxy():
+    """Local-only proxy: keep Ollama protected while making Tailscale Serve compatible."""
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version="HTTP/1.1"
+        def log_message(self, fmt, *args):
+            return
+        def _forward(self):
+            try:
+                length=int(self.headers.get("Content-Length","0") or 0)
+            except ValueError:
+                length=0
+            body=self.rfile.read(length) if length else None
+            headers={k:v for k,v in self.headers.items()
+                     if k.lower() not in {"host","connection","proxy-connection","transfer-encoding"}}
+            # Ollama rejects reverse-proxy requests carrying the public tailnet Host.
+            headers["Host"]="localhost:11434"
+            try:
+                conn=http.client.HTTPConnection("127.0.0.1",11434,timeout=300)
+                conn.request(self.command,self.path,body=body,headers=headers)
+                response=conn.getresponse()
+                payload=response.read()
+                self.send_response(response.status,response.reason)
+                for key,value in response.getheaders():
+                    if key.lower() not in {"connection","transfer-encoding","content-length"}:
+                        self.send_header(key,value)
+                self.send_header("Content-Length",str(len(payload)))
+                self.end_headers()
+                if self.command!="HEAD" and payload:
+                    self.wfile.write(payload)
+                conn.close()
+            except Exception:
+                self.send_response(502,"Bad Gateway")
+                self.send_header("Content-Length","0")
+                self.end_headers()
+        do_GET=_forward
+        do_POST=_forward
+        do_PUT=_forward
+        do_PATCH=_forward
+        do_DELETE=_forward
+        do_OPTIONS=_forward
+        do_HEAD=_forward
+
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    server=ThreadingHTTPServer(("127.0.0.1",OLLAMA_SHARE_PORT),Handler)
+    try:
+        server.serve_forever(poll_interval=.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+def _ollama_share_proxy_alive():
+    try:
+        pid=int(OLLAMA_SHARE_PID.read_text().strip())
+        os.kill(pid,0)
+        return pid
+    except (OSError,ValueError,FileNotFoundError):
+        try: OLLAMA_SHARE_PID.unlink()
+        except OSError: pass
+        return None
+
+
+def _start_ollama_share_proxy():
+    if _ollama_share_proxy_alive():
+        return True
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    with open(os.devnull,"wb") as quiet:
+        proc=subprocess.Popen(
+            [sys.executable,str(Path(__file__).resolve()),"_ollama-share-proxy"],
+            stdin=subprocess.DEVNULL,stdout=quiet,stderr=quiet,start_new_session=True
+        )
+    OLLAMA_SHARE_PID.write_text(str(proc.pid)+"\n")
+    os.chmod(OLLAMA_SHARE_PID,0o600)
+    deadline=time.monotonic()+2.0
+    url=f"http://127.0.0.1:{OLLAMA_SHARE_PORT}"
+    while time.monotonic()<deadline:
+        if proc.poll() is not None:
+            break
+        if _probe_ollama(url,.2):
+            return True
+        time.sleep(.05)
+    _stop_ollama_share_proxy()
+    return False
+
+
+def _stop_ollama_share_proxy():
+    pid=_ollama_share_proxy_alive()
+    if pid:
+        try: os.kill(pid,signal.SIGTERM)
+        except OSError: pass
+    try: OLLAMA_SHARE_PID.unlink()
+    except OSError: pass
+
+
 def ollama_share(args):
     args=list(args or [])
     tailscale=shutil.which("tailscale")
@@ -276,10 +377,14 @@ def ollama_share(args):
         print("LOOK OLLAMA · Tailscale is not installed")
         return 1
     if args and args[0]=="status":
-        return subprocess.call([tailscale,"serve","status"])
+        rc=subprocess.call([tailscale,"serve","status"])
+        state="ready" if _ollama_share_proxy_alive() else "off"
+        print(f"LOOK OLLAMA · host-rewrite proxy {state} · 127.0.0.1:{OLLAMA_SHARE_PORT}")
+        return rc
     if args and args[0] in {"off","stop"}:
-        proc=subprocess.run([tailscale,"serve","11434","off"])
+        proc=subprocess.run([tailscale,"serve",str(OLLAMA_SHARE_PORT),"off"])
         if proc.returncode==0:
+            _stop_ollama_share_proxy()
             print("✓ Ollama tailnet share off")
         return proc.returncode
 
@@ -287,11 +392,16 @@ def ollama_share(args):
         if _ensure_ollama_server(LOCAL_OLLAMA_URL,allow_start=True) is None:
             print("LOOK OLLAMA · local server unavailable")
             return 1
+    if not _start_ollama_share_proxy():
+        print("LOOK OLLAMA · could not start localhost share proxy")
+        return 1
     print("LOOK OLLAMA · sharing localhost:11434 inside your tailnet")
-    proc=subprocess.run([tailscale,"serve","--bg","11434"])
+    proc=subprocess.run([tailscale,"serve","--bg",str(OLLAMA_SHARE_PORT)])
     if proc.returncode==0:
         print("✓ Ollama available to your Tailscale devices")
         print("  discover it elsewhere with: lk ollama host")
+    else:
+        _stop_ollama_share_proxy()
     return proc.returncode
 
 
@@ -3465,6 +3575,7 @@ def main():
     if not a: return render([])
     cmd=a[0]; rest=a[1:]
     if cmd=="_remember-worker": return _memory_worker()
+    if cmd=="_ollama-share-proxy": return _ollama_share_proxy()
     modes={"detail":"detail","dirs":"dirs","files":"files","tree":"tree","recent":"recent","size":"size"}
     if cmd in ("help","-h","--help"): return help_screen()
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0

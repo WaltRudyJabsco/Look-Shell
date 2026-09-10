@@ -4,10 +4,6 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
-
-![LOOK Shell home](screenshots/LOOK_home.png)
-
 The mental model is deliberately physical:
 
 ```text
@@ -22,13 +18,7 @@ lh       come home
 Esc      back out
 ```
 
-LOOK began as a better, smarter `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
-
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
-
-![LOOK Shell AI](screenshots/LOOK_AI.png)
+LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
 
 ## Five minutes with LOOK
 
@@ -251,7 +241,7 @@ To share the current machine's localhost Ollama only inside your tailnet:
 lk ollama share
 ```
 
-This uses Tailscale Serve in the background. `lk ollama share status` shows the Serve state and `lk ollama share off` turns off this Ollama share.
+This uses Tailscale Serve in the background through a localhost-only LOOK proxy that preserves Ollama’s host protection. `lk ollama share status` shows the Serve state and `lk ollama share off` turns off this Ollama share.
 
 Tailscale is optional. Without it, local Ollama and manually saved host URLs continue to work normally. LOOK still speaks the Ollama API only; 3.1 does not add provider-specific OpenAI or Anthropic adapters.
 
