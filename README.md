@@ -22,11 +22,13 @@ LOOK began as a better `ls`. It became a semantic control layer for the terminal
 
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
-![LOOK Shell help](screenshots/LOOK_2_Shell_help.png)
+![LOOK Shell help](screenshots/LOOK_2_help.png)
 
 ![LOOK Shell filter](screenshots/LOOK_Shell_filter_find)
 
-![LOOK Shell AI](screenshots/LOOK_Shell_AI.png)
+![LOOK Shell AI](screenshots/LOOK_AI.png)
+
+![LOOK Shell home](screenshots/LOOK_home.png)
 ## Five minutes with LOOK
 
 Look around the current directory:
