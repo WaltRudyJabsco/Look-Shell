@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.1"
+VERSION="3.1.2"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -386,6 +386,9 @@ def ollama_share(args):
         if proc.returncode==0:
             _stop_ollama_share_proxy()
             print("✓ Ollama tailnet share off")
+        else:
+            print("LOOK OLLAMA · Tailscale Serve needs elevated permission")
+            print(f"  run: sudo tailscale serve {OLLAMA_SHARE_PORT} off")
         return proc.returncode
 
     if not _probe_ollama(LOCAL_OLLAMA_URL,.6):
@@ -400,8 +403,13 @@ def ollama_share(args):
     if proc.returncode==0:
         print("✓ Ollama available to your Tailscale devices")
         print("  discover it elsewhere with: lk ollama host")
-    else:
-        _stop_ollama_share_proxy()
+        return 0
+
+    # Tailscale commonly reserves Serve configuration changes for root/operator.
+    # Keep our localhost proxy alive so the one privileged Serve command can use it.
+    print("LOOK OLLAMA · Tailscale Serve needs elevated permission")
+    print(f"  run: sudo tailscale serve --bg {OLLAMA_SHARE_PORT}")
+    print("  then: lk ollama share status")
     return proc.returncode
 
 

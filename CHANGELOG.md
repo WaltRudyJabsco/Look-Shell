@@ -1,5 +1,13 @@
 # LOOK Shell changelog
 
+## 3.1.2 — Tailscale permission handoff
+
+- `lk ollama share` keeps the localhost Host-rewrite proxy alive when Tailscale Serve requires root/operator permission.
+- On that permission failure, LOOK prints the exact one-time `sudo tailscale serve --bg 11435` handoff instead of tearing the proxy back down.
+- `lk ollama share off` gives the matching sudo handoff when needed.
+- LOOK never invokes `sudo` itself and does not alter Tailscale operator configuration.
+
+
 ## 3.1.1 — Ollama share fix
 
 - `lk ollama share` now places a tiny localhost-only proxy between Tailscale Serve and Ollama.
