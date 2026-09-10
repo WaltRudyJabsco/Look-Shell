@@ -1,5 +1,12 @@
 # LOOK Shell changelog
 
+## 3.1.8 — consistent directory resolution
+
+- `ll`, `ld`, `lf`, `lt`, `lr`, and `lz` now resolve directory arguments the same way as `l`: exact directory first, otherwise zoxide shorthand.
+- Specialized views keep their existing mode and do not change the parent shell directory.
+- No filter, selection, clipboard, Ollama, installer, undo, or file-operation behavior changed.
+
+
 ## 3.1.7 — public shell hygiene
 
 - Removed four personal/project-specific aliases that had accidentally shipped in the public shell fragment.

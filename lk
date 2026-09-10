@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.7"
+VERSION="3.1.8"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝

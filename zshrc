@@ -136,12 +136,37 @@ l() {
   builtin cd -- "$target" || return
   _look . --mode smart --interactive
 }
-ll()  { _look "${1:-.}" --mode detail --interactive; }
-ld()  { _look "${1:-.}" --mode dirs --interactive; }
-lf()  { _look "${1:-.}" --mode files --interactive; }
-lt()  { _look "${1:-.}" --mode tree --depth 3 --interactive; }
-lr()  { _look "${1:-.}" --mode recent --interactive; }
-lz()  { _look "${1:-.}" --mode size --interactive; }
+# Specialized LOOK views use the same directory language as `l`:
+# explicit path first, otherwise resolve shorthand through zoxide.
+_look_view() {
+  local mode="$1"
+  shift
+
+  local target="."
+  if (( $# > 0 )); then
+    if (( $# == 1 )) && [[ -d "$1" ]]; then
+      target="$1"
+    else
+      target="$(zoxide query -- "$@" 2>/dev/null)" || {
+        print -P "%F{red}LOOK:%f no directory match for $*"
+        return 1
+      }
+    fi
+  fi
+
+  if [[ "$mode" == "tree" ]]; then
+    _look "$target" --mode tree --depth 3 --interactive
+  else
+    _look "$target" --mode "$mode" --interactive
+  fi
+}
+
+ll()  { _look_view detail "$@"; }
+ld()  { _look_view dirs "$@"; }
+lf()  { _look_view files "$@"; }
+lt()  { _look_view tree "$@"; }
+lr()  { _look_view recent "$@"; }
+lz()  { _look_view size "$@"; }
 lh()  { _look home; }
 
 # Keep your old names too: muscle memory is an API.
