@@ -2,7 +2,7 @@
 import os, platform, re, select, shutil, subprocess, sys, termios, tty, threading, time, hashlib, json, uuid
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.0.0-beta.7"
+VERSION="3.0.0-beta.13"
 HOME=Path.home()
 ROOT=Path(__file__).resolve().parent
 RENDERER=ROOT/"look_renderer.py"
@@ -93,16 +93,28 @@ def _help_color(body):
     """Add restrained semantic ANSI color to LOOK's own help text."""
     if not sys.stdout.isatty():
         return body
-    reset="\033[0m"; bold="\033[1m"; cyan="\033[36m"; magenta="\033[35m"; yellow="\033[33m"
+    reset="\033[0m"; bold="\033[1m"; cyan="\033[36m"; magenta="\033[35m"
     section_names={"LOOK","INSPECT","SYSTEM","FILE CARD","FILE ACTIONS","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
+    shortcut_tokens=("l / ls","ll","ld","lf","lt","lr","lz","zll WORD","cdl WORD",
+                     "fznv","f","rs","rb","lh","lo","lo ASK")
     out=[]
+    in_shortcuts=False
     for line in body.splitlines():
         stripped=line.strip()
         if "LOOK " in line and ("filesystem, navigation, shell" in line or "inspect the computer" in line):
             out.append(cyan+bold+line+reset); continue
         if stripped in section_names:
+            in_shortcuts=(stripped=="SHORTCUTS")
             out.append(magenta+bold+line+reset); continue
-        # Command/key token at the start of an indented help row.
+        if in_shortcuts and stripped:
+            colored=line
+            for token in sorted(shortcut_tokens,key=len,reverse=True):
+                colored=re.sub(
+                    rf'(?<!\S){re.escape(token)}(?=\s|$)',
+                    lambda m: cyan+bold+m.group(0)+reset,
+                    colored
+                )
+            out.append(colored); continue
         m=re.match(r'^(\s{2})(\S+(?:\s*/\s*\S+)?)(.*)$', line)
         if m and stripped:
             out.append(m.group(1)+cyan+bold+m.group(2)+reset+m.group(3)); continue
@@ -177,14 +189,15 @@ FILE ACTIONS
   lrm [PATH]           LOOK-assisted remove (confirmed)\n  lmk PATH             make directory path · undoable\n  lk undo              undo the last LOOK filesystem action
 
 SHORTCUTS
-  l / ls   smart view        ll       details
-  ld       directories       lf       files
-  lt       tree              lr       recent
-  lz       sizes             zll WORD jump + look
-  cdl WORD jump + details    fznv     fuzzy edit
-  f        find anywhere → LOOK        rs       reset ritual
-  lh       LOOK home         lo       Ollama chat
-  lo ASK   ask immediately
+  l / ls   smart view          ll       details
+  ld       directories         lf       files
+  lt       tree                lr       recent
+  lz       sizes               zll WORD jump + look
+  cdl WORD jump + details      fznv     fuzzy edit
+  f        find anywhere → LOOK
+  lh       LOOK home           lo       Ollama chat
+  lo ASK   ask immediately     rs       reset ritual
+  rb       reload zsh
 
 LIVE FILTER / SELECTION
   Enter      filter / open file / enter folder
@@ -282,6 +295,37 @@ def home():
     print(f"{_c('l','36')} look around   {_c('lo','36')} ask   {_c('lk','36')} inspect   {_c('lh','36')} home")
     return 0
 
+def _doctor_logo():
+    """Return compact OS identity art from the installed fetch tool."""
+    # fastfetch is preferred on fresh LOOK installs; neofetch remains supported.
+    if shutil.which("fastfetch"):
+        try:
+            r=subprocess.run(
+                ["fastfetch","--logo-only"],
+                capture_output=True,text=True,timeout=1.5
+            )
+            if r.returncode==0 and r.stdout.strip():
+                return r.stdout.rstrip()
+        except (OSError,subprocess.SubprocessError):
+            pass
+    if shutil.which("neofetch"):
+        try:
+            # Neofetch has no clean logo-only switch; disable every info field.
+            r=subprocess.run(
+                ["neofetch","--stdout","--disable","title","distro","model","kernel",
+                 "uptime","packages","shell","resolution","de","wm","wm_theme",
+                 "theme","icons","terminal","terminal_font","cpu","gpu","memory",
+                 "gpu_driver","disk","battery","font","song","local_ip","public_ip",
+                 "users","locale"],
+                capture_output=True,text=True,timeout=1.5
+            )
+            if r.returncode==0 and r.stdout.strip():
+                return r.stdout.rstrip()
+        except (OSError,subprocess.SubprocessError):
+            pass
+    return ""
+
+
 def _doctor_body():
     import json
     import urllib.request
@@ -307,7 +351,11 @@ def _doctor_body():
     memory_ok = _ensure_memory_file()
     web_key = bool(os.environ.get("OLLAMA_API_KEY"))
 
-    print(f"LOOK {VERSION}\n"+"─"*46)
+    print(f"LOOK {VERSION}")
+    logo=_doctor_logo()
+    if logo:
+        print(logo)
+    print("─"*46)
     print(f"\nSYSTEM\n  {platform.system()} {platform.release()} · {platform.machine()}")
     print("\nTOOLS")
     for n,ok in checks: print(f"  {'✓' if ok else '✗'} {n}")
@@ -687,12 +735,34 @@ def _tool_read_file(workspace, path):
         return f"Not found: {path}"
     if not target.is_file():
         return f"Not a file: {path}"
+
+    # PDF is a container format, not text. Extract deterministically at the
+    # edge and give the model only readable text.
+    if target.suffix.lower()==".pdf":
+        pdftotext=shutil.which("pdftotext")
+        if not pdftotext:
+            return "PDF text extraction unavailable; install pdftotext (Poppler)."
+        try:
+            result=subprocess.run(
+                [pdftotext,"-layout",str(target),"-"],
+                capture_output=True,text=True,timeout=8
+            )
+            if result.returncode!=0:
+                detail=result.stderr.strip()
+                return "PDF text extraction failed." + (f" {detail[:300]}" if detail else "")
+            text=result.stdout.strip()
+            if not text:
+                return "PDF contains no extractable text; it may be scanned/image-only."
+            return text[:16000] + ("\n…truncated" if len(text) > 16000 else "")
+        except (OSError,subprocess.SubprocessError) as exc:
+            return f"PDF text extraction failed: {exc}"
+
     try:
         if target.stat().st_size > 1_000_000:
             return "File is larger than the 1 MB read limit."
         data=target.read_bytes()
         if b"\x00" in data[:4096]:
-            return "Binary file; text preview unavailable."
+            return "Binary file; text extraction unavailable for this format."
         text=data.decode("utf-8", errors="replace")
         return text[:16000] + ("\n…truncated" if len(text) > 16000 else "")
     except OSError as exc:
@@ -1191,7 +1261,7 @@ def _filesystem_tools():
         }},
         {"type":"function","function":{
             "name":"read_file",
-            "description":"Read a text file inside the current LOOK workspace. Reads are bounded and binary files are rejected.",
+            "description":"Read readable contents inside the current LOOK workspace. Text files are read directly; PDFs are converted to text with pdftotext when available. Reads are bounded.",
             "parameters":{"type":"object","properties":{
                 "path":{"type":"string"}
             },"required":["path"]}
@@ -2667,11 +2737,39 @@ def _copy_file_clipboard(path):
     p=Path(path).expanduser().resolve()
     try:
         if platform.system()=="Darwin" and shutil.which("osascript"):
-            quoted=json.dumps(str(p))
-            script=f'set the clipboard to {{(POSIX file {quoted}) as alias}}'
-            subprocess.run(["osascript","-e",script],check=True,
+            if p.is_file():
+                clipboard_class={
+                    ".png":"PNGf",
+                    ".jpg":"JPEG",
+                    ".jpeg":"JPEG",
+                    ".tif":"TIFF",
+                    ".tiff":"TIFF",
+                }.get(p.suffix.lower())
+                if clipboard_class:
+                    quoted=json.dumps(str(p))
+                    script=(
+                        f'set the clipboard to '
+                        f'(read (POSIX file {quoted}) as «class {clipboard_class}»)'
+                    )
+                    subprocess.run(["osascript","-e",script],check=True,
+                                   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                    return True
+
+            paths_json=json.dumps([str(p)])
+            script=f"""
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+const paths = {paths_json};
+const pb = $.NSPasteboard.generalPasteboard;
+pb.clearContents;
+const urls = paths.map(p => $.NSURL.fileURLWithPath(p).js);
+if (!pb.writeObjects(urls)) throw new Error('NSPasteboard writeObjects failed');
+if ((pb.pasteboardItems.count * 1) < 1) throw new Error('clipboard verification failed');
+"""
+            subprocess.run(["osascript","-l","JavaScript","-e",script],check=True,
                            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             return True
+
         uri=p.as_uri()+"\r\n"
         if shutil.which("wl-copy"):
             subprocess.run(["wl-copy","--type","text/uri-list"],input=uri,text=True,check=True)
@@ -2845,6 +2943,9 @@ def inspect_file(path):
 
 def inspect_anything(term):
     """Human-first classification for `lk <anything>`. Paths always win."""
+    if term.lower()=="xyzzy":
+        print(_c("A hollow voice says: magic hands.", "35"))
+        return 0
     expanded=Path(term).expanduser()
     if expanded.exists():
         if expanded.is_dir(): return render([str(expanded)])

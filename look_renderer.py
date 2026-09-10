@@ -637,20 +637,59 @@ def prompt_line(prompt:str)->tuple[str,bool]:
         termios.tcsetattr(fd,termios.TCSADRAIN,old)
 
 
+def _mac_write_file_urls(paths:list[Path])->bool:
+    """Publish real NSURL file objects on the macOS general pasteboard."""
+    if not shutil.which('osascript'):
+        return False
+    resolved=[str(p.resolve()) for p in paths]
+    script=f"""
+ObjC.import('AppKit');
+ObjC.import('Foundation');
+const paths = {json.dumps(resolved)};
+const pb = $.NSPasteboard.generalPasteboard;
+pb.clearContents;
+const urls = paths.map(p => $.NSURL.fileURLWithPath(p).js);
+if (!pb.writeObjects(urls)) throw new Error('NSPasteboard writeObjects failed');
+if ((pb.pasteboardItems.count * 1) < 1) throw new Error('clipboard verification failed');
+"""
+    try:
+        subprocess.run(
+            ['osascript','-l','JavaScript','-e',script],
+            check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL
+        )
+        return True
+    except (OSError,subprocess.SubprocessError):
+        return False
+
+
 def copy_files_to_clipboard(paths:list[Path])->bool:
-    """Copy actual filesystem objects to the desktop clipboard."""
+    """Copy image pixels when useful; otherwise copy native filesystem objects."""
     resolved=[p.resolve() for p in paths]
     try:
-        if sys.platform=='darwin' and shutil.which('osascript'):
-            # Finder-style file clipboard, so Cmd-V pastes the objects themselves.
-            aliases=', '.join(
-                f'(POSIX file {json.dumps(str(p))}) as alias'
-                for p in resolved
-            )
-            script=f'set the clipboard to {{{aliases}}}'
-            subprocess.run(['osascript','-e',script],check=True,
-                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            return True
+        if sys.platform=='darwin':
+            # A single common image should paste as image content in chat/mail/editors.
+            if len(resolved)==1 and resolved[0].is_file() and shutil.which('osascript'):
+                p=resolved[0]
+                clipboard_class={
+                    '.png':'PNGf',
+                    '.jpg':'JPEG',
+                    '.jpeg':'JPEG',
+                    '.tif':'TIFF',
+                    '.tiff':'TIFF',
+                }.get(p.suffix.lower())
+                if clipboard_class:
+                    quoted=json.dumps(str(p))
+                    script=(
+                        f'set the clipboard to '
+                        f'(read (POSIX file {quoted}) as «class {clipboard_class}»)'
+                    )
+                    subprocess.run(['osascript','-e',script],check=True,
+                                   stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                    return True
+
+            # PDFs, documents, folders, and other arbitrary objects use NSURL
+            # pasteboard objects so Finder/Mail-style paste targets can consume them.
+            return _mac_write_file_urls(resolved)
 
         uris='\r\n'.join(p.as_uri() for p in resolved)+'\r\n'
         if shutil.which('wl-copy'):
@@ -665,9 +704,26 @@ def copy_files_to_clipboard(paths:list[Path])->bool:
     return False
 
 
+def action_footer(parts:list[str],width:int)->list[str]:
+    """Wrap action hints at separators instead of truncating useful verbs."""
+    prefix='  '
+    lines=[]
+    current=prefix
+    for part in parts:
+        piece=part if current==prefix else ' · '+part
+        if len(strip_ansi(current+piece)) > width and current!=prefix:
+            lines.append(f'{FAINT}{current}{RESET}')
+            current=prefix+part
+        else:
+            current+=piece
+    if current!=prefix:
+        lines.append(f'{FAINT}{current}{RESET}')
+    return lines
+
+
 def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_browse=None,on_back=None,on_go=None,force_interactive=False,initial_select:Path|None=None)->None:
     # Interactive state machine: browse -> filter -> select.
-    usable=max(3,height-3)
+    usable=max(3,height-5)
     if (len(rows)<=height-1 and not force_interactive) or not (sys.stdin.isatty() and sys.stdout.isatty()):
         print('\n'.join(rows)); return
     top=0; query=''; filtering=False; selecting=False; selected=0
@@ -773,32 +829,35 @@ def pager(rows:list[str],height:int,width:int,rebuild=None,candidates=None,on_br
             else:
                 sys.stdout.write('\n'.join(fit(r,width) for r in page))
             last=min(len(current),top+usable)
-            actions=''
+            action_parts=[]
             if filtering:
                 match_word='match' if len(matches)==1 else 'matches'
                 status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}█{RESET}'
                         f'  {GRAY}{len(matches)} {match_word} · {len(marked)} marked{RESET}')
-                actions=(f'  {FAINT}J K L ; move · Tab mark · A all · Enter open · '
-                         f'C copy→ · B clipboard · M move · R remove · Y path · G go · Esc clear{RESET}')
+                action_parts=['J K L ; move','Tab mark','A all','Enter open',
+                              'C copy→','B clipboard','M move','R remove',
+                              'Y path','G go','Esc clear']
             elif selecting:
                 name=picked.name if picked else '(no matches)'
                 kind='folder' if picked and picked.is_dir() else 'file'
                 status=(f'  {CYAN}{BOLD}SELECT{RESET} {WHITE}{name}{RESET} {GRAY}· {kind} · {len(marked)} marked{RESET}')
-                actions=(f'  {FAINT}J K L ; move · Tab mark · Enter open · '
-                         f'C copy→ · B clipboard · M move · R remove · Y path · G go · Esc filter · q quit{RESET}')
+                action_parts=['J K L ; move','Tab mark','Enter open',
+                              'C copy→','B clipboard','M move','R remove',
+                              'Y path','G go','Esc filter','q quit']
             elif query:
                 status=(f'  {CYAN}{BOLD}FILTER{RESET} {WHITE}{query}{RESET}'
                         f'  {GRAY}{last}/{len(current)}{RESET}')
-                actions=f'  {FAINT}Enter select · Esc clear · q quit{RESET}'
+                action_parts=['Enter select','Esc clear','q quit']
             else:
                 back_hint='Esc back' if on_back else 'Esc exit'
                 status=f'  {FAINT}{last}/{len(current)}{RESET}'
-                actions=(f'  {GRAY}Enter filter · Space/PgDn next · b/PgUp back · '
-                         f'g/G ends · {back_hint} · q quit{RESET}')
+                action_parts=['Enter filter','Space/PgDn next','b/PgUp back',
+                              'g/G ends',back_hint,'q quit']
             if notice:
                 status=f'{status}  {YELLOW}{notice}{RESET}'
                 notice=''
-            sys.stdout.write('\n'+fit(status,width)+'\n'+fit(actions,width)); sys.stdout.flush()
+            footer=action_footer(action_parts,width)
+            sys.stdout.write('\n'+fit(status,width)+'\n'+'\n'.join(footer)); sys.stdout.flush()
             if pending:
                 key,pending=pending,''
             else:

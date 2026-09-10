@@ -50,13 +50,15 @@ alias neo='neofetch'
 commands() {
   print -P '%F{cyan}%BLOOK SHELL%b%f  %F{244}filesystem + navigation%f'
   print ''
-  print -P '%F{75}  l / ls%f   smart view        %F{75}ll%f       details'
-  print -P '%F{75}  ld%f       directories       %F{75}lf%f       files'
-  print -P '%F{75}  lt%f       tree              %F{75}lr%f       recent'
-  print -P '%F{75}  lz%f       sizes             %F{75}zll WORD%f jump + look'
-  print -P '%F{75}  cdl WORD%f jump + details    %F{75}fznv%f     fuzzy edit'
-  print -P '%F{75}  f%f        fuzzy open        %F{75}mkd DIR%f  make + enter'
-  print -P '%F{75}  rb%f       reload shell      %F{75}rs%f       reset ritual'
+  print -P '%F{75}  l / ls%f   smart view          %F{75}ll%f       details'
+  print -P '%F{75}  ld%f       directories         %F{75}lf%f       files'
+  print -P '%F{75}  lt%f       tree                %F{75}lr%f       recent'
+  print -P '%F{75}  lz%f       sizes               %F{75}zll WORD%f jump + look'
+  print -P '%F{75}  cdl WORD%f jump + details      %F{75}fznv%f     fuzzy edit'
+  print -P '%F{75}  f%f        find anywhere → LOOK'
+  print -P '%F{75}  lh%f       LOOK home           %F{75}lo%f       Ollama chat'
+  print -P '%F{75}  lo ASK%f   ask immediately     %F{75}rs%f       reset ritual'
+  print -P '%F{75}  rb%f       reload zsh          %F{75}mkd DIR%f  make + enter'
   print ''
   print -P '%F{244}Inside a long LOOK view: Space page · b back · ↑↓/jk row · g/G ends · q quit%f'
   print -P '%F{244}Real Unix ls is always available as: command ls%f'
@@ -217,6 +219,39 @@ f() {
 
 
 # ── LOOK file actions ───────────────────────────────────────────────────────
+# One-line LOOK prompt with a real bare-Esc cancel.
+# Zsh's normal `read` treats Esc as line-editor input, which is wrong for actions.
+_look_prompt() {
+  local prompt="$1" ch value=""
+  REPLY=""
+  print -n -- "$prompt"
+
+  while true; do
+    IFS= read -rk1 ch || { print; return 1; }
+    case "$ch" in
+      $'\e')
+        print
+        return 130
+        ;;
+      $'\r'|$'\n')
+        print
+        REPLY="$value"
+        return 0
+        ;;
+      $'\177'|$'\b')
+        if [[ -n "$value" ]]; then
+          value="${value[1,-2]}"
+          print -n $'\b \b'
+        fi
+        ;;
+      *)
+        value+="$ch"
+        print -n -- "$ch"
+        ;;
+    esac
+  done
+}
+
 # Mutation stays explicit: LOOK selects/frames the intent, Unix does the work.
 _look_pick_path() {
   local picked
@@ -239,7 +274,8 @@ lmv() {
   else
     src=$(_look_source "$@") || return
     print -P "%F{cyan}MOVE%f  $src"
-    read "dest?to › "
+    _look_prompt "to › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    dest="$REPLY"
     [[ -n "$dest" ]] || return
   fi
   lk _move "$src" "$dest"
@@ -252,7 +288,8 @@ lcp() {
   else
     src=$(_look_source "$@") || return
     print -P "%F{cyan}COPY%f  $src"
-    read "dest?to [here] › "
+    _look_prompt "to [here] › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    dest="$REPLY"
     [[ -n "$dest" ]] || dest="."
   fi
   lk _copy "$src" "$dest"
@@ -265,7 +302,8 @@ lscp() {
   else
     src=$(_look_source "$@") || return
     print -P "%F{cyan}SEND%f  $src"
-    read "dest?to (host:path) › "
+    _look_prompt "to (host:path) › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    dest="$REPLY"
     [[ -n "$dest" ]] || return
   fi
   if [[ -d "$src" ]]; then
@@ -278,7 +316,8 @@ lscp() {
 lmk() {
   local dest="$*"
   if [[ -z "$dest" ]]; then
-    read "dest?make directory › "
+    _look_prompt "make directory › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    dest="$REPLY"
   fi
   [[ -n "$dest" ]] || return
   lk _mkdir "$dest"
@@ -288,7 +327,10 @@ lrm() {
   local src answer
   src=$(_look_source "$@") || return
   print -P "%F{red}REMOVE%f  $src"
-  read "answer?remove this path? [r/Enter cancels] › "
+  _look_prompt "remove this path? [r/Enter/Esc cancels] › " || {
+    print -P "%F{242}· cancelled%f"; return 1
+  }
+  answer="$REPLY"
   [[ "${answer:l}" == "r" ]] || { print -P "%F{242}· cancelled%f"; return 1; }
   lk _remove "$src"
 }
