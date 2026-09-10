@@ -1,5 +1,12 @@
 # LOOK Shell changelog
 
+## 3.1.7 — public shell hygiene
+
+- Removed four personal/project-specific aliases that had accidentally shipped in the public shell fragment.
+- Audited shipped shell/config/code files for personal usernames, absolute home paths, and private project launchers.
+- No LOOK-owned aliases, functions, interaction grammar, Ollama behavior, installer behavior, or file operations changed.
+
+
 ## 3.1.6 — polite shell integration
 
 - Installer no longer replaces `~/.zshrc` wholesale.

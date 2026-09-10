@@ -355,10 +355,6 @@ lrm() {
 # ── Personal tools / projects ────────────────────────────────────────────────
 alias trackflight='flightProgress'
 [[ "$OSTYPE" == darwin* ]] && alias love='/Applications/love.app/Contents/MacOS/love'
-alias rst='python3 ~/Desktop/misc-programs/labs/reboot_screen_improbability.py'
-alias rzt='python3 ~/Desktop/misc-programs/labs/future_crash_oracle_web.py --ollama --web --model qwen3:8b'
-alias dub='python3 ~/Desktop/misc-programs/labs/oracle_sound_system_dub.py --ollama --web --model qwen3:8b'
-alias rzt2='python3 ~/Desktop/misc-programs/labs/future_crash.py --model qwen3:8b'
 
 flightProgress() {
   while true; do
