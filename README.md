@@ -24,7 +24,7 @@ LOOK began as a better `ls`. It became a semantic control layer for the terminal
 
 ![LOOK Shell help](screenshots/LOOK_2_help.png)
 
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find)
+![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 ![LOOK Shell AI](screenshots/LOOK_AI.png)
 
