@@ -4,8 +4,6 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
-![LOOK Shell home](screenshots/LOOK_home.png)
-
 The mental model is deliberately physical:
 
 ```text
@@ -20,9 +18,7 @@ lh       come home
 Esc      back out
 ```
 
-LOOK began as a better, smarter `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
-
-![LOOK Shell help](screenshots/LOOK_2_help.png)
+LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
 
 ## Five minutes with LOOK
 
@@ -49,7 +45,6 @@ G        leave LOOK and make this the shell's real directory
 Esc      clear / back
 q        quit
 ```
-![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 On macOS, `B` uses native clipboard file objects for documents and folders and image data for a single common image, so the result can be pasted into Finder-, Mail-, chat-, and image-aware applications. `Y` is intentionally different: it copies the pathname as text.
 
@@ -133,8 +128,6 @@ LOOK previews text and code directly. If `chafa` is present, common images rende
 
 These are capabilities, not alternate interfaces. A missing preview helper degrades gracefully to text or metadata.
 
-![LOOK Shell AI](screenshots/LOOK_AI.png)
-
 ## LO: local AI with hands, not a shell
 
 If Ollama is installed:
@@ -207,7 +200,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
+LOOK intentionally does not document a magic `/releases/latest/download/look-shell.zip` URL because that only works when the release maintainer has uploaded an asset with exactly that filename.
 
 ### Ollama anywhere: local, remote, or tailnet
 
@@ -248,7 +241,7 @@ To share the current machine's localhost Ollama only inside your tailnet:
 lk ollama share
 ```
 
-This uses Tailscale Serve in the background through a localhost-only LOOK proxy that preserves Ollama’s host protection. `lk ollama share status` shows the Serve state and `lk ollama share off` turns off this Ollama share.
+This uses Tailscale Serve in the background through a localhost-only LOOK proxy that preserves Ollama’s host protection. If Tailscale requires root/operator permission for Serve changes, LOOK keeps the proxy ready and prints the exact one-time `sudo tailscale serve --bg 11435` handoff. `lk ollama share status` shows the Serve state and `lk ollama share off` turns off this Ollama share.
 
 Tailscale is optional. Without it, local Ollama and manually saved host URLs continue to work normally. LOOK still speaks the Ollama API only; 3.1 does not add provider-specific OpenAI or Anthropic adapters.
 
@@ -332,15 +325,118 @@ Presentation may evolve. Muscle memory should not.
 
 ## Reference
 
-The README is the canonical explanation of LOOK: what it is, how the interaction model works, installation, major features, and the reasoning behind the system.
+LOOK keeps documentation in three layers:
 
-For the compact in-terminal command and key glossary:
+1. **README** — the mental model, installation, and feature guide.
+2. **`lk help` / `commands`** — the complete in-terminal command and key glossary.
+3. **Contextual footers** — only the keys that matter in the state you are currently using.
 
-```sh
-lk help
+There is intentionally no separate installed man/TLDR tree to drift out of sync. This section and `lk help` are the canonical reference.
+
+### Complete command map
+
+```text
+LOOK / VIEWS
+  lk [THING]                 inspect a path, command, port, or process
+  lk detail [PATH]           detailed filesystem view
+  lk dirs [PATH]             directories
+  lk files [PATH]            files
+  lk tree [PATH]             tree
+  lk recent [PATH]           newest first
+  lk size [PATH]             size-oriented
+  lk run [PATH]              project/run inspection
+  lk project [PATH]          alias of lk run
+
+SYSTEM INSPECTION
+  lk up | ports | services   listening services
+  lk port NUMBER             one port
+  lk process TERM | proc     process search
+  lk processes | procs       interactive process list; Y copies PID
+  lk pid NUMBER              one PID
+  lk git [PATH]              Git state
+  lk machine                 machine capabilities
+  lk gpu                     GPU information
+  lk disk                    disk usage
+  lk net                     interactive addresses; Y copies IP
+  lk tailscale               tailnet status
+  lk env                     environment
+  lk path                    PATH diagnostics
+  lk why COMMAND             command resolution
+
+OLLAMA / LO
+  lo [ASK]                   local/default-host chat
+  lo search [ASK]            chat with Ollama web search
+  lo @HOST [ASK]             temporary host for one LO session
+  lk o --no-start ...        do not auto-start missing local Ollama
+  lk ollama                  Ollama and selected-host status
+  lk ollama models           select/enable installed models
+  lk ollama test             benchmark current model
+  lk ollama test --all       compare enabled installed models
+  lk ollama host             list saved/discovered hosts
+  lk ollama host NAME        select persistent default
+  lk ollama host local       return to localhost
+  lk ollama host NAME URL    save and select an explicit endpoint
+  lk ollama host forget NAME remove a saved remote profile
+  lk ollama share            expose local Ollama through Tailscale Serve
+  lk ollama share status     Serve + localhost rewrite-proxy status
+  lk ollama share off        stop the Ollama tailnet share
+  lk ollama key              securely write OLLAMA_API_KEY
+  lk ollama key status       report key configuration without revealing it
+
+MAINTENANCE
+  lk home                    LOOK home
+  lk doctor                  environment check
+  lk config                  installed/state paths
+  lk secrets                 secret-file status, never contents
+  lk undo                    undo last safe local filesystem transaction
+  lk uninstall               uninstall LOOK; optionally remove owned deps
+  lk version                 version
+  lk help                    complete in-terminal glossary
 ```
 
-`CHANGELOG.md` records release history. LOOK deliberately keeps its documentation footprint small rather than installing a parallel man/TLDR documentation system.
+### Shell vocabulary
+
+```text
+l / ls      smart interactive view       ll       details
+ld          directories                  lf       files
+lt          tree                         lr       recent
+lz          sizes                        zll WORD jump + look
+cdl WORD    jump + details               f        find anywhere → LOOK
+fznv        fuzzy find → Neovim          lh       LOOK home
+lcp         assisted copy                lmv      assisted move
+lscp        assisted scp                 lrm      assisted remove
+lmk PATH    make directory path          mkd DIR  make + enter
+lo          Ollama chat                  webterm  terminal over Tailscale
+rs          reset ritual                 rb       reload Zsh
+commands    same complete glossary as lk help
+```
+
+Bare `ls` is LOOK; `ls` with arguments and `command ls` reach ordinary Unix `ls`.
+
+### Interactive file language
+
+```text
+Type        filter immediately
+j/k/↑/↓     move selection; J/K/L/; also provide home-row directions
+Tab         mark / unmark
+A           mark all current matches / clear all marked matches
+Enter       open file / enter folder
+E           edit
+O           open with
+C           copy to filesystem destination
+M           move
+R           remove
+B           copy actual file object(s) to desktop clipboard
+Y           copy absolute path(s) as text
+P           print absolute path and exit
+G           leave LOOK and make this the shell's real directory
+Esc         clear / back / cancel
+q           quit
+```
+
+In a file card, `S` adds SCP. Long LOOK/help views use `Space`/`b` for paging, `j`/`k` or arrows for lines, `g`/`G` for the ends, and `q`/`Esc` to leave.
+
+`CHANGELOG.md` records release history. The command map above is deliberately redundant with `lk help`: the README explains the system; the terminal glossary is the fast operational reference.
 
 ## Platform and philosophy
 

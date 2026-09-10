@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.3"
+VERSION="3.1.4"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -539,53 +539,64 @@ LOOK
   lk tree [PATH]       tree
   lk recent [PATH]     newest first
   lk size [PATH]       size-oriented
+  lk run [PATH]        what can I do here? (project is an alias)
 
 INSPECT
-  lk run [PATH]        what can I do here?
-  lk up / ports        what is listening?
+  lk up / ports        what is listening? (services is an alias)
   lk port NUMBER       inspect one listening port
-  lk process TERM      find a running process
-  lk processes         browse/filter processes · Y copies PID
+  lk process TERM      find a running process (proc)
+  lk processes         browse/filter processes · Y copies PID (procs)
   lk pid NUMBER        inspect one process ID
   lk git [PATH]        repository status
   lk machine / gpu     machine capabilities
   lk disk              disk usage
   lk net               browse network addresses · Y copies IP
   lk tailscale         tailnet status
-  lk ollama            Ollama status
-  lk ollama host       list/select local + remote Ollama hosts
-  lk ollama share      share local Ollama inside your tailnet
-  lk ollama models     model control panel · Enter select · X enable/disable
-  lk ollama test       benchmark current model
-  lk ollama test --all compare installed models
   lk env / path        environment / PATH diagnostics
   lk why COMMAND       explain command resolution
 
-SYSTEM
-  lk home              reset to a friendly LOOK home screen
-  lk doctor            check the environment
-  lk config            show installed paths
-  lk secrets           secrets status (never contents)
-  lk version           print version
-  LOOK_CLASSIC=1 lk    use the frozen classic presentation
-  lk o [search] [ASK]  Ollama chat / optional first prompt
-  lk o @HOST [ASK]     use another Ollama host for this session
+AI / OLLAMA
+  lo [ASK]             Ollama chat / optional first prompt
+  lo search [ASK]      chat with Ollama web search
+  lo @HOST [ASK]       use another Ollama host for this session
   lk o --no-start ...  never start a missing local server
-  lk help              this glossary
+  lk ollama            Ollama + selected-host status
+  lk ollama models     model panel · Enter select · X enable/disable
+  lk ollama test       benchmark current model
+  lk ollama test --all compare enabled installed models
+  lk ollama host       list saved + reachable Ollama hosts
+  lk ollama host NAME  make NAME the persistent default
+  lk ollama host local return to localhost
+  lk ollama host NAME URL
+                       save URL as NAME and select it
+  lk ollama host forget NAME
+                       forget a saved remote host
+  lk ollama share      share local Ollama inside the tailnet
+  lk ollama share status
+                       Tailscale Serve + LOOK proxy status
+  lk ollama share off  stop the tailnet Ollama share
+  lk ollama key        securely save the Ollama web-search key
+  lk ollama key status report key configuration; never reveal it
 
-FILE CARD
-  j / k / ↑ / ↓       scroll preview
-  Space / b            page forward / back
-  Enter                 open
-  E / B / Y / P         edit / clipboard file / copy path / print path
-  M / C / S / R         move / copy / scp / remove
-  q / Esc               quit
+SYSTEM
+  lk home              friendly LOOK home screen
+  lk doctor            check the environment
+  lk config            show installed paths + state
+  lk secrets           secrets status (never contents)
+  lk undo              undo last safe local filesystem action
+  lk uninstall         remove LOOK; offer only owned dependencies
+  lk version           print version
+  lk help              this complete command/key glossary
+  LOOK_CLASSIC=1 lk    use the frozen classic presentation
 
 FILE ACTIONS
-  lmv [PATH]           LOOK-assisted move
   lcp [PATH]           LOOK-assisted copy
+  lmv [PATH]           LOOK-assisted move
   lscp [PATH]          LOOK-assisted scp
-  lrm [PATH]           LOOK-assisted remove (confirmed)\n  lmk PATH             make directory path · undoable\n  lk undo              undo the last LOOK filesystem action
+  lrm [PATH]           LOOK-assisted remove (confirmed)
+  lmk PATH             make directory path · undoable
+  mkd DIR              make directory and enter it
+  lk undo              undo last LOOK local filesystem transaction
 
 SHORTCUTS
   l / ls   smart view          ll       details
@@ -596,25 +607,40 @@ SHORTCUTS
   f        find anywhere → LOOK
   lh       LOOK home           lo       Ollama chat
   lo ASK   ask immediately     rs       reset ritual
-  rb       reload zsh
+  rb       reload zsh          webterm  terminal over Tailscale
+  commands same as lk help     command ls = real Unix ls
 
 LIVE FILTER / SELECTION
-  Enter      filter / open file / enter folder
-  j / k      move selection
+  Type       filter immediately
+  j/k/↑/↓    move selection; J/K/L/; are home-row directions
+  Tab        mark / unmark highlighted item
+  A          mark all matches / clear all marked matches
+  Enter      open file / enter folder
   E          edit
   O          open with another application
-  Y          copy absolute path
+  C / M / R  copy / move / remove
+  B          copy actual file object(s) to desktop clipboard
+  Y          copy absolute path(s) as text
   P          print absolute path + exit
-  Esc        back / clear
+  G          exit LOOK and make this the shell's directory
+  Esc        clear / back / cancel
   q          quit
 
+FILE CARD
+  j / k / ↑ / ↓       scroll preview
+  Space / b            page forward / back
+  Enter                 open
+  E / O                  edit / open with
+  B / Y / P              clipboard file / copy path / print path
+  M / C / S / R          move / copy / scp / remove
+  q / Esc                quit
+
 HELP PAGER
-  j / k      line down / up
-  ↑ / ↓      line down / up
-  Space / b  page forward / back
-  PgDn/PgUp  page forward / back
-  g / G      beginning / end
-  q / Esc    quit
+  j / k / ↑ / ↓       line down / up
+  Space / b            page forward / back
+  PgDn / PgUp          page forward / back
+  g / G                beginning / end
+  q / Esc              quit
 """
     return _page_text(_help_color(body))
 

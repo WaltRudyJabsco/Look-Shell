@@ -1,5 +1,13 @@
 # LOOK Shell changelog
 
+## 3.1.4 — documentation reconciliation
+
+- Audited the executable command dispatch, Zsh shortcuts, Ollama host/share/key grammar, and interactive file controls against the documentation.
+- `lk help` is now the complete in-terminal command/key glossary, including Ollama `share status/off`, `key/status`, host selection/forget, uninstall, undo, webterm, and the full selection action language.
+- README Reference now carries the same canonical command map, organized by intent.
+- No runtime behavior changed.
+
+
 ## 3.1.3
 
 - Make Ollama model choice host-aware: keep the preferred model when installed on the selected host, otherwise use a resident or installed model instead of surfacing Ollama's model-not-found 404.
