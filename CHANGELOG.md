@@ -1,5 +1,11 @@
 # LOOK Shell changelog
 
+## 3.1.5 — filter footer label
+
+- Restore `E edit` to the interactive filter/select footer. Edit behavior was already intact; only its visible command hint had been lost.
+- No runtime behavior changed.
+
+
 ## 3.1.4 — documentation reconciliation
 
 - Audited the executable command dispatch, Zsh shortcuts, Ollama host/share/key grammar, and interactive file controls against the documentation.
