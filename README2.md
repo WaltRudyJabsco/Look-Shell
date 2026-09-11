@@ -4,6 +4,8 @@
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.
 
+![LOOK Shell home](screenshots/LOOK_home.png)
+
 The mental model is deliberately physical:
 
 ```text
@@ -19,6 +21,8 @@ Esc      back out
 ```
 
 LOOK began as a better `ls`. It became a semantic control layer for the terminal: **find something, understand it, act on it, and keep moving.**
+
+![LOOK Shell help](screenshots/LOOK_2_help.png)
 
 ## Five minutes with LOOK
 
@@ -45,6 +49,8 @@ G        leave LOOK and make this the shell's real directory
 Esc      clear / back
 q        quit
 ```
+
+![LOOK Shell filter](screenshots/LOOK_Shell_filter_find.png)
 
 On macOS, `B` uses native clipboard file objects for documents and folders and image data for a single common image, so the result can be pasted into Finder-, Mail-, chat-, and image-aware applications. `Y` is intentionally different: it copies the pathname as text.
 
@@ -127,6 +133,8 @@ The design rule is simple: **dangerous operations should be obvious, and mistake
 LOOK previews text and code directly. If `chafa` is present, common images render inside the terminal. PDFs can render page one when a local rasterizer is available; `pdftotext` also lets LOOK and LO extract text from text-bearing PDFs.
 
 These are capabilities, not alternate interfaces. A missing preview helper degrades gracefully to text or metadata.
+
+![LOOK Shell AI](screenshots/LOOK_AI.png)
 
 ## LO: local AI with hands, not a shell
 
@@ -279,6 +287,8 @@ The shell tool lets LO test code, run builds, install packages, use Git, inspect
 
 Thinking-capable models may return `<think>...</think>` blocks. LOOK keeps them visible, but renders them as a separate muted/italic `thinking ›` section before the normal high-contrast `lo ›` answer. Tool activity (`file ›`, `command ›`, `search ›`) remains visually separate as well, so long local-model sessions are easier to scan without hiding useful model process.
 
+![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
+
 ### Ollama anywhere: local, remote, or tailnet
 
 LOOK 3.1 separates the `lo` interface from the machine doing the inference. Local Ollama remains the default and nothing remote is required.
@@ -416,6 +426,14 @@ LOOK_CLASSIC=1 lo
 ```
 
 Presentation may evolve. Muscle memory should not.
+
+## FutureCrash // Zero
+
+![LOOK Shell FutureCrash](screenshots/LOOK_Shell_future.png)
+
+LOOK pairs naturally with FutureCrash -- https://github.com/WaltRudyJabsco/FutureCrash -- a separate terminal project built around the same keyboard-first philosophy. Future Crash provides a playful, interactive front end for local Ollama models—part terminal oracle, part system companion—with web search, observations, fortunes, and LOOK-aware integration. Neither project requires the other, but together they turn the terminal into something closer to a small personal computing environment: LOOK handles finding, navigating, inspecting, and acting; Future Crash gives the local AI a place to live.
+
+https://github.com/WaltRudyJabsco/FutureCrash/releases
 
 ## Reference
 
