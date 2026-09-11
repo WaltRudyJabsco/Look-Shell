@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.3.2"
+VERSION="3.3.3"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -2007,17 +2007,34 @@ def _ollama_markup(text):
 
 
 
-def _print_ollama_answer(answer):
-    """Give model thinking and final response distinct terminal hierarchy."""
+def _split_ollama_thinking(message):
+    """Return (thinking, final) across structured and Qwen template variants."""
     import re
-    text=str(answer or "")
-    match=re.search(r"<think>(.*?)</think>", text, flags=re.I|re.S)
-    if not match:
-        print("\n" + _ansi_label("lo ›", "35") + " " + _ollama_markup(text) + "\n")
-        return
+    message=message or {}
+    structured=str(message.get("thinking") or "").strip()
+    content=str(message.get("content") or "")
 
-    thinking=match.group(1).strip()
-    final=(text[:match.start()] + text[match.end():]).strip()
+    if structured:
+        final=re.sub(r"^\s*<think>\s*", "", content, flags=re.I)
+        final=re.sub(r"\s*</think>\s*", "", final, count=1, flags=re.I)
+        return structured, final.strip()
+
+    match=re.search(r"<think>(.*?)</think>", content, flags=re.I|re.S)
+    if match:
+        thinking=match.group(1).strip()
+        final=(content[:match.start()] + content[match.end():]).strip()
+        return thinking, final
+
+    close=re.search(r"</think>", content, flags=re.I)
+    if close:
+        return content[:close.start()].strip(), content[close.end():].strip()
+
+    return "", content.strip()
+
+
+def _print_ollama_answer(message):
+    """Render reasoning as process and the final response as the result."""
+    thinking,final=_split_ollama_thinking(message)
 
     if thinking:
         if sys.stdout.isatty():
@@ -2036,6 +2053,7 @@ def _print_ollama_answer(answer):
         print(_ansi_label("lo ›","35") + " " + _ollama_markup(final) + "\n")
     else:
         print(_ansi_label("lo ›","35") + " " + _c("(no final response)","2") + "\n")
+
 
 
 def _ollama_ps(base, timeout=2):
@@ -2361,8 +2379,8 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                 continue
 
             answer = message.get("content", "").strip()
-            messages.append({"role": "assistant", "content": answer})
-            _print_ollama_answer(answer)
+            messages.append(message)
+            _print_ollama_answer(message)
             if _queue_memory_exchange(base, model, prompt, answer):
                 if sys.stdout.isatty():
                     print(_c("  · remembering in background", "2"))

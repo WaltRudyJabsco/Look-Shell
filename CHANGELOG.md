@@ -1,5 +1,14 @@
 # LOOK Shell changelog
 
+## 3.3.3 — thinking-output compatibility
+
+- Prefer Ollama's structured `message.thinking` field when available.
+- Continue supporting normal `<think>...</think>` model-template output.
+- Add Qwen compatibility for responses where the opening `<think>` is stripped but the closing `</think>` remains.
+- Render reasoning under muted/italic `thinking ›` and the final response under normal `lo ›`.
+- No streaming, capability, tool, filesystem, remote-host, settings, or installer behavior changed.
+
+
 ## 3.3.2 — installer man-page path fix
 
 - Fixes the 3.3.1 installer error `SCRIPT_DIR: unbound variable`.
