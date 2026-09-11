@@ -196,6 +196,7 @@ chmod +x install.sh
 
 The installer uses its own location as the source directory, so the checkout folder can have any name. You do **not** need to rename it.
 
+
 ### Terminal-only download
 
 If you want to use `curl`, copy the actual ZIP URL shown by GitHub for the release you want rather than relying on a guessed asset name. For example:
@@ -207,6 +208,78 @@ cd <the-folder-that-was-created>
 chmod +x install.sh
 ./install.sh
 ```
+
+## Canonical command reference
+
+`lk help` is the authoritative live command/key glossary. The README explains the system and workflows; `man lk` is the compact Unix reference; `docs/COMMANDS.md` is the repository-friendly command sheet.
+
+`lk settings` is the unified interactive surface for persistent AI/remote controls, but it is only a front end over the existing `lk ollama ...` commands and state. The direct commands remain supported and scriptable.
+
+## Unified settings
+
+LOOK's command grammar remains the source of truth, but persistent AI/remote state can also be managed from one place:
+
+```sh
+lk settings
+```
+
+The panel shows the current access profile, Ollama host, preferred model, web-search key status, and Ollama tailnet-share state. Use arrows or `j`/`k` through `fzf`, press Enter to change/open a setting, and Esc to return.
+
+The settings panel is deliberately only a UI over the existing commands and state files. Nothing new is stored just for the panel:
+
+```text
+Access profile       ↔ lk ollama access
+Ollama host          ↔ lk ollama host
+Preferred model      ↔ lk ollama models
+Web search key       ↔ lk ollama key
+Tailnet share        ↔ lk ollama share
+```
+
+The direct commands remain fully supported for scripts, muscle memory, and troubleshooting.
+
+## LO access profiles
+
+LOOK keeps **model intelligence** separate from **machine authority**. A model running on another Ollama host still acts on the computer where LOOK is running.
+
+The existing bounded workspace behavior remains the default:
+
+```text
+conservative   read/search the starting workspace + web; no mutation
+workspace      LOOK's bounded file tools inside the starting workspace
+power          workspace tools + shell commands; confirm every command
+unsafe         unrestricted shell commands for the session
+```
+
+Use a profile temporarily:
+
+```sh
+lo --conservative
+lo --workspace
+lo --power
+lo --unsafe
+```
+
+Profiles compose with remote inference:
+
+```sh
+lo --power @workstation
+lo @workstation --power
+```
+
+In both cases the model runs on `workstation`, while commands execute on the computer where you typed `lo`.
+
+Set the persistent default with:
+
+```sh
+lk ollama access
+lk ollama access power
+lk ollama access workspace
+```
+
+`power` prints each proposed command and asks before executing it. `unsafe` asks once when the LO session begins, then permits shell commands without per-command confirmation. Commands run with the current user's privileges and environment. LOOK does not silently become root, though an explicitly chosen command may invoke normal system authentication such as `sudo`.
+
+The shell tool lets LO test code, run builds, install packages, use Git, inspect processes, perform system cleanup, and operate command-line software instead of only editing files. For ordinary file work, LOOK's structured workspace tools remain preferable because they retain bounded, purpose-specific behavior.
+
 ![LOOK Shell doctor](screenshots/LOOK_Shell_doctor.png)
 
 ### Ollama anywhere: local, remote, or tailnet
