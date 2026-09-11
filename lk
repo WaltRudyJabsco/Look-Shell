@@ -4,7 +4,7 @@ import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from pathlib import Path
-VERSION="3.1.8"
+VERSION="3.3.2"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -25,6 +25,7 @@ MEMORY_WORKER_LOCK=STATE_DIR/"memory_worker.lock"
 OLLAMA_MODEL_FILE=STATE_DIR/"ollama_model"
 OLLAMA_MODELS_FILE=STATE_DIR/"ollama_models.json"
 OLLAMA_HOSTS_FILE=STATE_DIR/"ollama_hosts.json"
+LO_ACCESS_FILE=STATE_DIR/"lo_access"
 OLLAMA_SHARE_PORT=11435
 OLLAMA_SHARE_PID=STATE_DIR/"ollama_share_proxy.pid"
 LOCAL_OLLAMA_URL="http://127.0.0.1:11434"
@@ -559,7 +560,11 @@ AI / OLLAMA
   lo [ASK]             Ollama chat / optional first prompt
   lo search [ASK]      chat with Ollama web search
   lo @HOST [ASK]       use another Ollama host for this session
-  lk o --no-start ...  never start a missing local server
+  lo --conservative      read/search only for this session
+  lo --workspace         bounded workspace tools (default)
+  lo --power             shell commands · confirm each
+  lo --unsafe            unrestricted shell for this session
+  lk o --no-start ...    never start a missing local server
   lk ollama            Ollama + selected-host status
   lk ollama models     model panel · Enter select · X enable/disable
   lk ollama test       benchmark current model
@@ -577,10 +582,13 @@ AI / OLLAMA
   lk ollama share off  stop the tailnet Ollama share
   lk ollama key        securely save the Ollama web-search key
   lk ollama key status report key configuration; never reveal it
+  lk ollama access      show persistent LO capability profile
+  lk ollama access MODE set conservative/workspace/power/unsafe
 
 SYSTEM
   lk home              friendly LOOK home screen
   lk doctor            check the environment
+  lk settings          unified interactive settings panel
   lk config            show installed paths + state
   lk secrets           secrets status (never contents)
   lk undo              undo last safe local filesystem action
@@ -1643,6 +1651,152 @@ def _tool_make_directory(workspace, path):
     return _journal_mkdir(target)
 
 
+
+LO_PROFILES=("conservative","workspace","power","unsafe")
+
+def _load_lo_profile():
+    env=os.environ.get("LOOK_LO_PROFILE","").strip().lower()
+    if env in LO_PROFILES:
+        return env
+    try:
+        saved=LO_ACCESS_FILE.read_text(encoding="utf-8").strip().lower()
+        if saved in LO_PROFILES:
+            return saved
+    except OSError:
+        pass
+    return "workspace"
+
+def _save_lo_profile(profile):
+    if profile not in LO_PROFILES:
+        raise ValueError(f"unknown LO profile: {profile}")
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    tmp=LO_ACCESS_FILE.with_suffix(".tmp")
+    tmp.write_text(profile+"\n",encoding="utf-8")
+    os.chmod(tmp,0o600)
+    tmp.replace(LO_ACCESS_FILE)
+    os.chmod(LO_ACCESS_FILE,0o600)
+
+def lo_access(args):
+    args=list(args or [])
+    current=_load_lo_profile()
+    if not args or args[0] in {"status","list"}:
+        _title("lo access")
+        rows=[
+            ("conservative","read/search workspace + web; no writes"),
+            ("workspace","bounded LOOK file tools inside starting workspace"),
+            ("power","workspace tools + shell commands; confirm each command"),
+            ("unsafe","shell commands without per-command confirmation"),
+        ]
+        for name,desc in rows:
+            marker="✓" if name==current else " "
+            print(f"  {marker} {name:<13} {desc}")
+        print("\n  session override: lo --conservative | --workspace | --power | --unsafe")
+        return 0
+    profile=args[0].lower()
+    if profile not in LO_PROFILES:
+        print(f"LOOK OLLAMA · unknown access profile: {profile}")
+        print("  choose: conservative · workspace · power · unsafe")
+        return 1
+    _save_lo_profile(profile)
+    print(f"✓ LO access · {profile}")
+    return 0
+
+def _confirm_command(command):
+    print()
+    print(_ansi_label("command ›","33"),command)
+    try:
+        answer=input("Allow command? [y/N] ").strip().lower()
+    except (EOFError,KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y","yes"}
+
+def _confirm_unsafe_session():
+    print(_c("LO UNSAFE","31"))
+    print("  unrestricted shell commands are enabled for this LO session")
+    print("  commands run with your current user privileges and environment")
+    print("  LOOK will not ask again for individual commands")
+    try:
+        answer=input("Enter unsafe mode? [y/N] ").strip().lower()
+    except (EOFError,KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y","yes"}
+
+def _command_tool():
+    return {"type":"function","function":{
+        "name":"run_command",
+        "description":(
+            "Run a shell command on the computer running LOOK. Use this in power/unsafe sessions for executing, "
+            "testing, installing, inspecting, building, cleaning, or administering beyond LOOK's bounded file tools. "
+            "Prefer inspection before destructive or system-wide mutation."
+        ),
+        "parameters":{"type":"object","properties":{
+            "command":{"type":"string","description":"Shell command to execute with zsh -lc"},
+            "cwd":{"type":"string","description":"Working directory; default is the LO starting workspace"},
+            "timeout":{"type":"integer","description":"Timeout seconds, 1-600; default 120"}
+        },"required":["command"]}
+    }}
+
+def _run_command_tool(workspace,args,profile):
+    command=str(args.get("command","")).strip()
+    if not command:
+        return "Command tool failed: empty command"
+
+    cwd_raw=str(args.get("cwd","") or "").strip()
+    cwd=Path(cwd_raw).expanduser() if cwd_raw else workspace
+    if not cwd.is_absolute():
+        cwd=(workspace/cwd).resolve()
+    try:
+        cwd=cwd.resolve()
+    except OSError:
+        return f"Command tool failed: invalid cwd: {cwd}"
+    if not cwd.exists() or not cwd.is_dir():
+        return f"Command tool failed: cwd is not a directory: {cwd}"
+
+    try:
+        timeout=max(1,min(600,int(args.get("timeout",120) or 120)))
+    except (TypeError,ValueError):
+        timeout=120
+
+    if profile=="power" and not _confirm_command(command):
+        return "Command denied by user."
+
+    shell=shutil.which("zsh")
+    if not shell:
+        return "Command tool failed: zsh is not available on PATH"
+
+    try:
+        proc=subprocess.run(
+            [shell,"-lc",command],
+            cwd=str(cwd),
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+        )
+        output=(proc.stdout or "").strip()
+        if len(output)>16000:
+            output="[output truncated to final 16000 characters]\n"+output[-16000:]
+        return f"exit {proc.returncode}" + (f"\n{output}" if output else "")
+    except subprocess.TimeoutExpired as exc:
+        partial=exc.stdout or ""
+        if isinstance(partial,bytes):
+            partial=partial.decode(errors="replace")
+        partial=partial.strip()
+        return f"Command timed out after {timeout}s" + (f"\n{partial[-8000:]}" if partial else "")
+    except OSError as exc:
+        return f"Command tool failed: {exc}"
+
+def _lo_tools(profile):
+    tools=_filesystem_tools()
+    if profile=="conservative":
+        tools=[t for t in tools if t.get("function",{}).get("name") in {"list_files","read_file","search_files"}]
+    if profile in {"power","unsafe"}:
+        tools.append(_command_tool())
+    return tools
+
 def _filesystem_tools():
     return [
         {"type":"function","function":{
@@ -1852,6 +2006,38 @@ def _ollama_markup(text):
     return "\n".join(out)
 
 
+
+def _print_ollama_answer(answer):
+    """Give model thinking and final response distinct terminal hierarchy."""
+    import re
+    text=str(answer or "")
+    match=re.search(r"<think>(.*?)</think>", text, flags=re.I|re.S)
+    if not match:
+        print("\n" + _ansi_label("lo ›", "35") + " " + _ollama_markup(text) + "\n")
+        return
+
+    thinking=match.group(1).strip()
+    final=(text[:match.start()] + text[match.end():]).strip()
+
+    if thinking:
+        if sys.stdout.isatty():
+            dim="\033[2m"; italic="\033[3m"; reset="\033[0m"
+            print("\n" + _ansi_label("thinking ›","2"))
+            rendered=_ollama_markup(thinking)
+            for line in rendered.splitlines():
+                print("  " + dim + italic + line + reset)
+        else:
+            print("\nthinking ›")
+            for line in thinking.splitlines():
+                print("  "+line)
+        print()
+
+    if final:
+        print(_ansi_label("lo ›","35") + " " + _ollama_markup(final) + "\n")
+    else:
+        print(_ansi_label("lo ›","35") + " " + _c("(no final response)","2") + "\n")
+
+
 def _ollama_ps(base, timeout=2):
     import json
     import urllib.request
@@ -1934,12 +2120,19 @@ def _choose_ollama_model(running):
     return preferred, False
 
 
-def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_override=None, host_name=None):
+def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_override=None, host_name=None, access_profile=None):
     """Minimal local chat; optional first prompt and web-search mode."""
     import json
     import urllib.request
 
     base = _ollama_base(host_override)
+    profile=(access_profile or _load_lo_profile()).lower()
+    if profile not in LO_PROFILES:
+        print(f"LOOK OLLAMA · unknown access profile: {profile}")
+        return 1
+    if profile=="unsafe" and not _confirm_unsafe_session():
+        print("· cancelled")
+        return 0
 
     running = _ensure_ollama_server(base, allow_start=(allow_start and _is_local_ollama(base)))
     if running is None:
@@ -1975,6 +2168,7 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
     shown_host=host_name or _ollama_host_name(base)
     print(f"{mode} · {model} · {Path.cwd()}")
     print(f"host · {shown_host} · {base}")
+    print(f"access · {profile.upper()}")
     if not resident:
         print(f"model · idle · loads on first prompt")
     print(f"web · {web_state} · Ctrl-D to exit · Ctrl-C cancels work\n")
@@ -2017,6 +2211,27 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
             "when citing or recommending web material, always preserve the exact http/https URL supplied by the search result and emit a complete Markdown link in the form [descriptive label](https://actual-url). Never emit citation placeholders such as [source], [1], or a site name styled like a link without an actual URL. Never invent a URL from a site name."
         )},
     ]
+    capability_notes={
+        "conservative": (
+            "ACCESS PROFILE: CONSERVATIVE. You may inspect/search/read the starting workspace and use web search when available. "
+            "Mutation and shell execution tools are intentionally absent."
+        ),
+        "workspace": (
+            "ACCESS PROFILE: WORKSPACE. You may use LOOK's bounded filesystem tools inside the starting workspace. "
+            "Arbitrary shell execution is intentionally unavailable."
+        ),
+        "power": (
+            "ACCESS PROFILE: POWER. You may use bounded workspace tools and run_command for computer-level work. "
+            "Every shell command requires user confirmation. Prefer inspection before mutation and briefly explain destructive/system-wide actions."
+        ),
+        "unsafe": (
+            "ACCESS PROFILE: UNSAFE. The user explicitly enabled unrestricted shell command execution for this session. "
+            "Use run_command when needed, including system-wide work, package installation, builds, cleanup, and administration. "
+            "Avoid unnecessary destructive actions and report command results accurately."
+        ),
+    }
+    messages.append({"role":"system","content":capability_notes[profile]})
+
     memory_context = _memory_context(memory)
     if memory_context:
         messages.append({"role": "system", "content": memory_context})
@@ -2073,7 +2288,7 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                 "messages": messages,
                 "stream": False,
             }
-            tools = _filesystem_tools()
+            tools = _lo_tools(profile)
             if has_web and not force_search:
                 tools.append(web_tool)
             payload_obj["tools"] = tools
@@ -2129,6 +2344,12 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                         tool_content = _run_filesystem_tool(workspace, name, args)
                         if name in {"write_file", "copy_path", "move_path", "remove_path", "make_directory"}:
                             print(f"{_ansi_label('file ›', '32')} {tool_content}")
+                    elif name=="run_command":
+                        if profile not in {"power","unsafe"}:
+                            tool_content="Command execution is unavailable in this access profile."
+                        else:
+                            tool_content=_run_command_tool(workspace,args,profile)
+                            print(f"{_ansi_label('command ›', '33')} {tool_content.splitlines()[0]}")
                     else:
                         tool_content = f"Unknown tool: {name}"
 
@@ -2141,7 +2362,7 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
 
             answer = message.get("content", "").strip()
             messages.append({"role": "assistant", "content": answer})
-            print("\n" + _ansi_label("lo ›", "35") + " " + _ollama_markup(answer) + "\n")
+            _print_ollama_answer(answer)
             if _queue_memory_exchange(base, model, prompt, answer):
                 if sys.stdout.isatty():
                     print(_c("  · remembering in background", "2"))
@@ -2989,6 +3210,146 @@ def ollama_test(all_models=False):
     return 0
 
 
+
+def _settings_share_state():
+    tailscale=shutil.which("tailscale")
+    if not tailscale:
+        return "unavailable"
+    try:
+        proc=subprocess.run([tailscale,"serve","status"],capture_output=True,text=True,timeout=2)
+        text=(proc.stdout or "")+(proc.stderr or "")
+        if proc.returncode==0 and ("11435" in text or "11434" in text):
+            return "on"
+    except (OSError,subprocess.SubprocessError):
+        pass
+    return "off"
+
+
+def _settings_rows():
+    base=_ollama_base()
+    return [
+        ("access", "AI", "Access profile", _load_lo_profile()),
+        ("host", "AI", "Ollama host", _ollama_host_name(base)),
+        ("model", "AI", "Preferred model", _preferred_ollama_model()),
+        ("key", "AI", "Web search key", "configured" if os.environ.get("OLLAMA_API_KEY") else "not configured"),
+        ("share", "REMOTE", "Ollama tailnet share", _settings_share_state()),
+    ]
+
+
+def _settings_pick_access():
+    current=_load_lo_profile()
+    choices=[
+        ("conservative","read/search only"),
+        ("workspace","bounded file tools"),
+        ("power","shell commands · confirm each"),
+        ("unsafe","unrestricted shell · session gate"),
+    ]
+    if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return lo_access([])
+    payload="\n".join(f"{name}\t{'★ ' if name==current else '  '}{name:<13} {desc}" for name,desc in choices)+"\n"
+    result=subprocess.run(
+        ["fzf","--prompt","access › ","--header","Enter select · Esc back","--height","~45%",
+         "--reverse","--no-multi","--delimiter","\t","--with-nth","2..","--ansi"],
+        input=payload,text=True,capture_output=True
+    )
+    if result.returncode!=0 or not result.stdout.strip():
+        return 0
+    profile=result.stdout.split("\t",1)[0].strip()
+    return lo_access([profile])
+
+
+def _settings_pick_host():
+    data=_load_ollama_hosts()
+    discovered=_discover_ollama_hosts()
+    merged={name:item["url"] for name,item in data["hosts"].items()}
+    for item in discovered:
+        merged.setdefault(item["name"],item["url"])
+    current=_ollama_host_name(_ollama_base())
+    if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return ollama_hosts([])
+    payload="\n".join(
+        f"{name}\t{'★ ' if name==current else '  '}{name:<20} {url}"
+        for name,url in sorted(merged.items(),key=lambda kv:kv[0].casefold())
+    )+"\n"
+    result=subprocess.run(
+        ["fzf","--prompt","host › ","--header","Enter select · Esc back","--height","~55%",
+         "--reverse","--no-multi","--delimiter","\t","--with-nth","2..","--ansi"],
+        input=payload,text=True,capture_output=True
+    )
+    if result.returncode!=0 or not result.stdout.strip():
+        return 0
+    name=result.stdout.split("\t",1)[0].strip()
+    return ollama_hosts([name])
+
+
+def _settings_share_menu():
+    if not shutil.which("tailscale"):
+        print("LOOK SETTINGS · Tailscale is not installed")
+        return 1
+    state=_settings_share_state()
+    if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(f"Ollama tailnet share: {state}")
+        return 0
+    rows=[
+        ("status","show Tailscale Serve status"),
+        ("on","start/share local Ollama"),
+        ("off","stop Ollama tailnet share"),
+    ]
+    payload="\n".join(f"{key}\t{label}" for key,label in rows)+"\n"
+    result=subprocess.run(
+        ["fzf","--prompt","share › ","--header",f"current: {state} · Enter select · Esc back",
+         "--height","~40%","--reverse","--no-multi","--delimiter","\t","--with-nth","2.."],
+        input=payload,text=True,capture_output=True
+    )
+    if result.returncode!=0 or not result.stdout.strip():
+        return 0
+    action=result.stdout.split("\t",1)[0].strip()
+    if action=="status":
+        return ollama_share(["status"])
+    if action=="off":
+        return ollama_share(["off"])
+    return ollama_share([])
+
+
+def settings():
+    """Unified UI over LOOK's existing persistent settings and actions."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty() and shutil.which("fzf")):
+        _title("settings")
+        for _,section,label,value in _settings_rows():
+            print(f"  {section:<7} {label:<22} {value}")
+        print("\n  interactive settings require fzf + a TTY")
+        return 0
+
+    while True:
+        rows=_settings_rows()
+        payload="\n".join(
+            f"{key}\t{section:<7} {label:<23} {_c(value,'33') if value in {'off','not configured','unavailable'} else value}"
+            for key,section,label,value in rows
+        )+"\n"
+        result=subprocess.run(
+            ["fzf",
+             "--prompt","settings › ",
+             "--header","Enter change/open · Esc/q leave · existing commands still work",
+             "--height","~65%","--reverse","--no-multi",
+             "--delimiter","\t","--with-nth","2..","--ansi"],
+            input=payload,text=True,capture_output=True
+        )
+        if result.returncode!=0 or not result.stdout.strip():
+            return 0
+        key=result.stdout.split("\t",1)[0].strip()
+        if key=="access":
+            _settings_pick_access()
+        elif key=="host":
+            _settings_pick_host()
+        elif key=="model":
+            ollama_models()
+        elif key=="key":
+            ollama_key([])
+        elif key=="share":
+            _settings_share_menu()
+        print()
+
+
 def inspect_ollama():
     import json, urllib.request
     _title('ollama')
@@ -3008,7 +3369,8 @@ def inspect_ollama():
             print(f"  resident  {_c('idle','33')}")
     except Exception:
         print(f"  server    {_c('offline','33')}")
-    print(f"  web     {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
+    print(f"  web       {'key present' if os.environ.get('OLLAMA_API_KEY') else _c('off','2')}")
+    print(f"  access    {_load_lo_profile()}")
     pending=len(_memory_job_files())
     if _memory_worker_active():
         tail=f" · {pending} queued" if pending else ""
@@ -3630,30 +3992,45 @@ def main():
         or (
             sys.argv[1] == "ollama"
             and len(sys.argv) >= 3
-            and sys.argv[2] not in {"models","test","key","host","hosts","share"}
+            and sys.argv[2] not in {"models","test","key","host","hosts","share","access"}
         )
     ):
         args=sys.argv[2:]
         allow_start=True
         host_override=None
         host_name=None
-        if args and args[0] == "--no-start":
-            allow_start=False
-            args=args[1:]
-        if args and args[0].startswith("@") and len(args[0])>1:
-            token=args.pop(0)[1:]
-            host_name,host_override=_resolve_ollama_host(token)
-            if not host_override:
-                print(f"LOOK OLLAMA · host not found: {token}")
-                print("  run: lk ollama host")
-                return 1
+        access_profile=None
+        profile_flags={
+            "--conservative":"conservative",
+            "--workspace":"workspace",
+            "--power":"power",
+            "--unsafe":"unsafe",
+        }
+        while args:
+            if args[0] in profile_flags:
+                access_profile=profile_flags[args.pop(0)]
+                continue
+            if args[0] == "--no-start":
+                allow_start=False
+                args.pop(0)
+                continue
+            if args[0].startswith("@") and len(args[0])>1 and host_override is None:
+                token=args.pop(0)[1:]
+                host_name,host_override=_resolve_ollama_host(token)
+                if not host_override:
+                    print(f"LOOK OLLAMA · host not found: {token}")
+                    print("  run: lk ollama host")
+                    return 1
+                continue
+            break
         force_search=bool(args and args[0] == "search")
         if force_search:
             args=args[1:]
         initial_prompt=" ".join(args).strip() or None
         return ollama_chat(
             force_search=force_search, initial_prompt=initial_prompt,
-            allow_start=allow_start, host_override=host_override, host_name=host_name
+            allow_start=allow_start, host_override=host_override, host_name=host_name,
+            access_profile=access_profile
         )
     a=sys.argv[1:]
     if not a: return render([])
@@ -3685,6 +4062,7 @@ def main():
         if len(rest)!=1: return 2
         print(_action_result(_journal_mkdir(rest[0]))); return 0
     if cmd=="doctor": return doctor()
+    if cmd=="settings": return settings()
     if cmd=="uninstall": return uninstall()
     if cmd=="config":
         print(f"LOOK {VERSION}\n  executable  {Path(__file__).resolve()}\n  renderer    {RENDERER}\n  zshrc       {HOME/'.zshrc'}\n  secrets     {HOME/'.zsh_secrets'}\n  memory      {MEMORY_FILE}\n  memory queue {MEMORY_QUEUE}\n  undo        {UNDO_FILE}\n  ollama model {_preferred_ollama_model()}\n  ollama models {OLLAMA_MODELS_FILE}")
@@ -3722,6 +4100,8 @@ def main():
             return ollama_hosts(rest[1:])
         if rest and rest[0]=="share":
             return ollama_share(rest[1:])
+        if rest and rest[0]=="access":
+            return lo_access(rest[1:])
         if rest and rest[0]=="models":
             return ollama_models(rest[1] if len(rest)>1 else None)
         if rest and rest[0]=="test":

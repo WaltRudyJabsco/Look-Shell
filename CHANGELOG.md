@@ -1,5 +1,39 @@
 # LOOK Shell changelog
 
+## 3.3.2 — installer man-page path fix
+
+- Fixes the 3.3.1 installer error `SCRIPT_DIR: unbound variable`.
+- The optional user man-page install now uses the installer's existing `ROOT` source directory.
+- No runtime, settings, LO, filesystem, or documentation behavior changed.
+
+
+## 3.3.1 — documentation synchronization
+
+- Synchronizes README, `lk help`, migration notes, installer metadata, repository command reference, and Unix man page with LOOK 3.3.
+- Restores `lk.1` to the release and documents `lk settings`, all LO access profiles, and the full Ollama host/share/key/access grammar.
+- Adds `docs/COMMANDS.md` as a compact repository reference; this is documentation only, not a `tldr` integration.
+
+
+## 3.3.0 — unified settings + LO presentation
+
+- Adds `lk settings`, a single interactive panel over existing access-profile, Ollama-host, preferred-model, web-key, and Tailscale-share controls.
+- The settings panel creates no second configuration system; direct commands and existing state remain canonical.
+- Thinking-capable model output now renders `<think>...</think>` as a muted/italic `thinking ›` section, visually separate from the final `lo ›` response.
+- Existing `file ›`, `command ›`, and `search ›` activity remains distinct.
+- No capability semantics, confirmation rules, filesystem behavior, remote routing, or installer ownership model changed.
+
+
+## 3.2.0 — LO capability profiles
+
+- Adds `conservative`, `workspace`, `power`, and `unsafe` LO access profiles; existing workspace behavior remains the default.
+- Adds `run_command` only in power/unsafe sessions. Commands execute on the computer running LOOK even when inference comes from a remote Ollama host.
+- Power confirms every shell command; unsafe asks once on session entry and then skips per-command prompts.
+- `lk ollama access [MODE]` inspects/sets the persistent profile; `lo --MODE` overrides it for one session.
+- Access flags compose with `@HOST` in either order.
+- `lk ollama` now reports the selected access profile.
+- No existing filesystem, clipboard, filter, undo, remote-host, or installer grammar was removed.
+
+
 ## 3.1.8 — consistent directory resolution
 
 - `ll`, `ld`, `lf`, `lt`, `lr`, and `lz` now resolve directory arguments the same way as `l`: exact directory first, otherwise zoxide shorthand.

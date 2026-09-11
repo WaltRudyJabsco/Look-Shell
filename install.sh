@@ -242,7 +242,7 @@ from pathlib import Path
 state = Path.home()/".local/share/look"
 state.mkdir(parents=True, exist_ok=True)
 manifest = {
-    "version": "3.1.2",
+    "version": "3.3.2",
     "packages": [x for x in os.environ.get("LOOK_MANIFEST_PACKAGES","").splitlines() if x],
     "created_dirs": [x for x in os.environ.get("LOOK_MANIFEST_DIRS","").splitlines() if x],
     "zsh_backup": os.environ.get("LOOK_MANIFEST_ZSH_BACKUP",""),
@@ -263,3 +263,13 @@ PY
   echo
   echo "Reference: lk help"
 fi
+
+
+# User-owned man page: no sudo, and harmless if the source is absent.
+LOOK_MAN_SRC="$ROOT/lk.1"
+LOOK_MAN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/man/man1"
+if [[ -f "$LOOK_MAN_SRC" ]]; then
+  mkdir -p "$LOOK_MAN_DIR"
+  cp "$LOOK_MAN_SRC" "$LOOK_MAN_DIR/lk.1"
+fi
+

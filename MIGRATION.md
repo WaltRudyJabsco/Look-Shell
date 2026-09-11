@@ -1,98 +1,83 @@
-# LOOK 1.0.6
+# LOOK migration notes
 
-A surgical Ollama-interface polish release.
+LOOK is designed to be upgraded in place. The installer preserves user-owned shell configuration, LOOK state, secrets, and existing data unless a feature explicitly requires migration.
 
-- `lo` now explicitly knows that LOOK renders lightweight Markdown and encourages concise terminal-readable formatting.
-- The system prompt now describes the available workspace file tools, optional web search, and their boundaries so the model does not have to infer its environment.
-- Markdown `http/https` links use OSC 8 terminal hyperlinks when supported, allowing labeled links to be clicked directly in compatible terminals.
-- No changes to model loading, memory policy, search semantics, filesystem-tool behavior, navigation, filtering, or installer behavior.
+## Upgrading to 3.3
 
+LOOK 3.3 adds `lk settings` as a unified interactive view over the existing access-profile, Ollama-host, model, key, and tailnet-share controls. It introduces no second configuration store; all direct commands remain valid.
 
-## 1.0.6
+Thinking-capable model output is now visually separated from the final answer. Capability and confirmation semantics are unchanged.
 
-- Web-result instructions now require exact returned URLs in complete Markdown links.
-- Prevents pseudo-citations such as `[source]` or styled site names with no clickable target.
-- OSC 8 rendering, search transport, memory, tools, and filesystem behavior are unchanged.
+## Upgrading to 3.2
 
+### LO access profiles
 
-## 1.0.6
+LOOK 3.2 adds four capability profiles:
 
-- Web links now keep the full literal URL visible instead of relying on hidden OSC 8 hyperlink metadata.
-- `lk help` gains restrained ANSI color for its header, sections, and command/key vocabulary.
-- Model, memory, search transport, filesystem, navigation, and installer behavior are unchanged.
+- `conservative` — read/search only
+- `workspace` — bounded LOOK file tools; this remains the default
+- `power` — workspace tools plus shell commands, confirmed one command at a time
+- `unsafe` — unrestricted shell commands after one explicit session-entry confirmation
 
+Existing installs therefore retain the same authority they had before 3.2 until the user deliberately selects another profile.
 
-## 1.0.7
+Use:
 
-- Fixes `lk help` `NameError: re is not defined` introduced by the 1.0.6 help-color formatter.
-- No behavior changes beyond this fix.
+```sh
+lk ollama access
+lk ollama access power
+lk ollama access workspace
+```
 
+or override one session with:
 
-## 1.0.8
+```sh
+lo --conservative
+lo --workspace
+lo --power
+lo --unsafe
+```
 
-- Adds `lk home` and the `lh` shortcut.
-- HOME paints a clean LOOK landing screen, current folder, optional Git branch, lightweight Ollama status, and a cowsay fortune, then returns to the shell.
-- `rs`, filesystem behavior, Ollama chat, memory, and installer behavior are unchanged.
+Remote inference and local authority remain separate. `lo @HOST --power` runs the model on `HOST`, but commands execute on the computer where LOOK itself is running.
 
+## Upgrading from pre-3.1.6 installs
 
-## 2.0.0
+Older LOOK installers could replace `~/.zshrc` wholesale. Current LOOK does not.
 
-LOOK now treats `lk` as a general inspection verb while preserving the 1.x filesystem interface. New read-only views include `run`, `up`/`ports`, `git`, `machine`/`box`, `gpu`, `net`/`network`, `tailscale`, `ollama`, `env`, `path`, and `why COMMAND`. A single unknown argument is conservatively classified as an existing path, port, executable command, or matching process.
+Modern installs:
 
-Compatibility note: `lo` and `lk o` remain the Ollama chat interface. Bare `lk ollama` is now the Ollama inspection view; `lk ollama search ...` and `lk ollama <prompt>` still enter chat.
+1. back up the current `~/.zshrc`;
+2. install LOOK's shell fragment at `~/.config/look/look.zsh`;
+3. add one marked source block to the user's existing `.zshrc`;
+4. leave the rest of the file untouched.
 
-## 2.0.1
+`lk uninstall` understands both layouts: modern installs remove only the marked hook and LOOK fragment; legacy installs can restore the recorded pre-LOOK backup.
 
-- Packaging sync release for the canonical GitHub 2.0 files.
-- Preserves the user-added `webterm()` Zsh helper for ttyd + Tailscale Serve.
-- No LOOK runtime behavior changes from 2.0.0.
+## Remote Ollama
 
-## 2.1.0
+LOOK 3.1 introduced named Ollama hosts and optional Tailscale discovery.
 
-- `lk FILE` now shows a richer file card with bounded text/source preview and first-page PDF text when available.
-- Adds explicit LOOK-assisted file verbs: `lmv`, `lcp`, `lscp`, and `lrm`.
-- With no path, file verbs use a current-directory `fzf` picker; with a path they act directly.
-- Move/copy preserve Unix interactive collision handling; directory copies are recursive.
-- `lrm` requires typing `REMOVE` before calling Unix `rm`.
-- Existing `mv`, `cp`, `scp`, `rm`, filesystem views, inspection grammar, `lo`, `rs`, `webterm()`, and HOME remain unchanged.
+```sh
+lk ollama host
+lk ollama host NAME
+lo @NAME
+```
 
-## 2.1.1
+`lk ollama share` uses a localhost rewrite proxy plus Tailscale Serve so Ollama can remain bound to localhost while remote LOOK clients reach it privately over the tailnet.
 
-- Fixes the 2.1.0 file-card interaction bug: `lk FILE` no longer prints a card and immediately returns to the shell.
-- File cards are now interactive and paged until `q`/Esc.
-- Live keys: Enter open, E edit, Y copy path, P print path, M move, C copy, S scp, R remove.
-- File mutation remains explicit; removal still requires typing `REMOVE`.
-- Directory LOOK behavior and all other 2.1.0 features are unchanged.
+If Tailscale Serve requires operator/root permission, LOOK keeps the local proxy alive and prints the exact privileged handoff instead of invoking `sudo` itself.
 
-## 2.1.2
+## Compatibility
 
-- Adds bounded `copy_path`, `move_path`, `remove_path`, and `make_directory` tools to `lo`.
-- `copy_path` uses filesystem copy semantics rather than model-mediated read/write reconstruction.
-- File copies are SHA-256 verified before success is reported.
-- `write_file` is now explicitly reserved for intentional UTF-8 text creation/editing and should never be used to duplicate an existing file.
-- Move/remove/mkdir stay inside the starting LOOK workspace; removal requires an explicit user request.
-- No arbitrary shell execution was added.
+The LOOK 2.2 interaction grammar remains the behavioral compatibility baseline. Upgrades should preserve:
 
-## 2.1.3
+- `l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz`
+- filter/selection controls
+- clipboard/path actions
+- `G` directory handoff
+- undo behavior
+- LO workspace tools
+- remote Ollama host routing
+- `xyzzy`
 
-- Adds `lk undo` for LOOK filesystem mutations.
-- Copy, move/rename, remove, and mkdir record a small bounded transaction journal.
-- Remove is recoverable through LOOK's private undo store.
-- Undo refuses unsafe reversals; ordinary Unix commands are not tracked.
-- Keeps the latest 20 LOOK transactions.
-
-## 2.1.4
-
-- Fixes `lk undo` for `lcp`, `lmv`, `lrm`, and interactive `lk FILE` mutations by routing every LOOK-owned local mutation through the same journal.
-- `lo`, shell verbs, and file-card actions now share one transaction engine.
-- Removal confirmation is simplified to `r` + Enter; Enter alone cancels.
-- `lscp` remains outside undo because remote filesystem changes cannot be safely reversed locally.
-
-## 2.1.5
-
-- Moves `lo` persistent-memory compression off the interactive critical path.
-- Each completed exchange is durably queued; one detached worker remembers queued exchanges serially and exits when idle.
-- Leaving `lo` no longer cancels remembering.
-- `lk ollama` reports `memory remembering`, queued work, or idle.
-- Memory writes remain atomic; no daemon, service, or new dependency is added.
-
+Presentation and capability layers may evolve, but established muscle memory should not silently change.
