@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Sasha's Zsh — shell/navigation stays shell; LOOK owns filesystem presentation.
+# LOOK + Future Crash — terminal environment shell integration.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Powerlevel10k instant prompt: keep near the top.
@@ -57,8 +57,9 @@ commands() {
   print -P '%F{75}  cdl WORD%f jump + details      %F{75}fznv%f     fuzzy edit'
   print -P '%F{75}  f%f        find anywhere → LOOK'
   print -P '%F{75}  lh%f       LOOK home           %F{75}lo%f       Ollama chat'
+  print -P '%F{75}  rst%f      Future Crash        %F{75}fc%f       Future Crash'
   print -P '%F{75}  lo ASK%f   ask immediately     %F{75}rs%f       reset ritual'
-  print -P '%F{75}  rb%f       reload zsh          %F{75}mkd DIR%f  make + enter'
+  print -P '%F{75}  rb%f       reload zsh          %F{75}lmk%f      smart make · file or dir'
   print ''
   print -P '%F{244}Inside a long LOOK view: Space page · b back · ↑↓/jk row · g/G ends · q quit%f'
   print -P '%F{244}Real Unix ls is always available as: command ls%f'
@@ -195,12 +196,6 @@ cdl() {
   ll
 }
 
-mkd() {
-  [[ $# -eq 1 ]] || { print "usage: mkd <directory>"; return 2; }
-  mkdir -p -- "$1" || return
-  builtin cd -- "$1"
-}
-
 # Neovim's most famous usability bug is not knowing how to leave it.
 # LOOK teaches the escape hatch once, then never interrupts again.
 _look_nvim_intro() {
@@ -269,7 +264,8 @@ _look_prompt() {
   print -n -- "$prompt"
 
   while true; do
-    IFS= read -rk1 ch || { print; return 1; }
+    # -s keeps the terminal from echoing the key; LOOK owns the display.
+    IFS= read -rsk1 ch || { print; return 1; }
     case "$ch" in
       $'\e')
         print
@@ -292,6 +288,19 @@ _look_prompt() {
         ;;
     esac
   done
+}
+
+# Immediate one-key choice for LOOK action prompts.
+_look_choice() {
+  local prompt="$1" ch
+  REPLY=""
+  print -n -- "$prompt"
+  IFS= read -rsk1 ch || { print; return 1; }
+  print
+  case "$ch" in
+    $'\e') return 130 ;;
+    *) REPLY="${ch:l}"; return 0 ;;
+  esac
 }
 
 # Mutation stays explicit: LOOK selects/frames the intent, Unix does the work.
@@ -356,13 +365,82 @@ lscp() {
 }
 
 lmk() {
-  local dest="$*"
+  local force="" dest answer result parent
+
+  if [[ "$1" == "-d" || "$1" == "--dir" ]]; then
+    force="dir"; shift
+  elif [[ "$1" == "-f" || "$1" == "--file" ]]; then
+    force="file"; shift
+  fi
+
+  dest="$*"
   if [[ -z "$dest" ]]; then
-    _look_prompt "make directory › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    _look_prompt "make › " || { print -P "%F{242}· cancelled%f"; return 1; }
     dest="$REPLY"
   fi
   [[ -n "$dest" ]] || return
-  lk _mkdir "$dest"
+
+  # Existing paths are not an intent question; report the filesystem fact first.
+  if [[ -e "$dest" ]]; then
+    if [[ -d "$dest" ]]; then
+      print "LOOK make · already exists as a directory: $dest"
+    else
+      print "LOOK make · already exists as a file: $dest"
+    fi
+    return 1
+  fi
+
+  # A trailing slash is native Unix directory intent.
+  if [[ "$force" == "dir" || "$dest" == */ ]]; then
+    dest="${dest%/}"
+    [[ -n "$dest" ]] || { print "LOOK make · invalid directory"; return 2; }
+    lk _mkdir "$dest" || return
+    [[ -d "$dest" ]] || { print "LOOK make · directory was not created: $dest"; return 1; }
+    builtin cd -- "$dest"
+    return
+  fi
+
+  if [[ "$force" != "file" ]]; then
+    local leaf="${dest:t}"
+    # Dotfiles and names with a suffix are strong file intent.
+    if [[ "$leaf" != .* && "$leaf" != *.* ]]; then
+      print -P "%F{cyan}LOOK make%f · %B$dest%b is ambiguous"
+      _look_choice "[d] directory + enter · [f] file · Esc cancel › " || {
+        print -P "%F{242}· cancelled%f"; return 1
+      }
+      answer="$REPLY"
+      case "$answer" in
+        d|dir|directory)
+          lk _mkdir "$dest" || return
+          [[ -d "$dest" ]] || { print "LOOK make · directory was not created: $dest"; return 1; }
+          builtin cd -- "$dest"
+          return
+          ;;
+        f|file) ;;
+        *) print -P "%F{242}· cancelled%f"; return 1 ;;
+      esac
+    fi
+  fi
+
+  # File intent. If parents are missing, ask before creating them.
+  result="$(lk _touch "$dest")"
+  if [[ "$result" == CREATE_DIR_REQUIRED* ]]; then
+    parent="${dest:h}"
+    print -P "%F{cyan}LOOK make%f · parent directory does not exist: %B$parent%b"
+    _look_choice "create parent path? [y/n] › " || { print -P "%F{242}· cancelled%f"; return 1; }
+    answer="$REPLY"
+    if [[ "$answer" == y ]]; then
+      result="$(lk _touch --parents "$dest")"
+    else
+      print -P "%F{242}· cancelled%f"; return 1
+    fi
+  fi
+  print -r -- "$result"
+}
+
+mkd() {
+  [[ $# -ge 1 ]] || { print "usage: mkd <directory>"; return 2; }
+  lmk -d "$@"
 }
 
 lrm() {
@@ -393,12 +471,29 @@ flightProgress() {
 [[ -f ~/.fzf.zsh ]] && source ~/.fzf.zsh
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 
+
+# LOOK context-sensitive completion.
+fpath=("$HOME/.config/look/completions" $fpath)
+autoload -Uz compinit
+(( $+functions[compdef] )) || compinit -i
+autoload -Uz _lk _lo _lmk
+compdef _lk lk
+# lo is a noglob alias; COMPLETE_ALIASES lets its own grammar complete before expansion.
+setopt COMPLETE_ALIASES
+compdef _lo lo
+compdef _lmk lmk mkd
+
 # LOOK unified command
 alias lk='nocorrect lk'
 commands() { "$HOME/.local/bin/lk" help; }
 
 # LOOK Ollama — minimal on-demand chat; a resident model is reused when available.
-alias lo='lk o'
+alias lo='noglob lk o'
+
+# Fast media transport
+alias mm='lk media toggle'
+alias mn='lk media next'
+alias mp='lk media prev'
 
 webterm() {
   (( $+commands[ttyd] )) || { print "LOOK: webterm needs ttyd. Re-run the LOOK installer."; return 127; }
@@ -412,3 +507,8 @@ webterm() {
   tailscale serve --https=8443 7681
 }
 
+
+
+# ── Future Crash ─────────────────────────────────────────────────────────────
+alias rst='future-crash'
+alias fc='future-crash'

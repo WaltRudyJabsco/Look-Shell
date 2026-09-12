@@ -1,5 +1,82 @@
 # LOOK Shell changelog
 
+## 3.8.1 — Explicit model-resource policy
+
+- LO now uses an explicit 8192-token context window with bounded recent working history.
+- `light`, `adaptive`, and `deep` now drive Ollama thinking behavior on thinking-capable models instead of acting only as prompt guidance.
+- Interactive output ceilings are 800 / 1400 / 2000 tokens respectively.
+- Memory and learned-skill housekeeping use small no-thinking budgets.
+- History trimming preserves complete user-led tool transactions rather than retaining arbitrary transcript tails.
+
+## 3.8.0 — personality + live thinking
+
+- Personality packs: LO, Space Robot, Max, Philosopher.
+- Thinking depth: light/adaptive/deep.
+- Thinking display: compact/full/quiet with streaming response handling.
+- Settings/completion/docs synchronized.
+
+
+## 3.7.2 — lmk directory-entry fix
+
+- `lmk -d` and prompted directory creation now call `_mkdir` directly and then `cd` only when the directory exists.
+
+
+## 3.7.1 — prompt input fix
+
+- `_look_prompt` now suppresses terminal echo before LOOK renders typed characters.
+- Adds `_look_choice` for immediate `lmk` d/f/y/n decisions.
+
+
+## 3.7.0 — smart make
+
+- `lmk` creates files or directories from one command.
+- Adds journaled empty-file creation and safe undo.
+- `mkd` now delegates to journaled `lmk -d`.
+- Adds `_lmk` completion.
+
+
+## 3.6.4 — media status feedback
+
+- `lk media` uses direct state/artist/title queries.
+- `mm`, `mn`, `mp`, and full media actions report resulting track/state.
+
+
+## 3.6.2 — macOS media detection fix
+
+- `lk media` now detects Music and Spotify directly through AppleScript.
+
+
+## 3.6.1 — fast media aliases + paged intelligence views
+
+- Adds `mm`, `mn`, and `mp`.
+- Adds pager behavior to `lk memory` and `lk skills`.
+
+
+## 3.6.0 — media transport + portable intelligence versions
+
+- Adds `lk media` with macOS Music/Spotify and Linux MPRIS adapters.
+- Adds memory schema version 1.
+- Adds skills schema version 1 and bundled skills pack version 1.
+- Adds `lk skills version` and `lk skills update [FILE]`.
+- Preserves locally Learned skills while refreshing Bundled craft.
+
+
+## 3.5.1 — durable memory lifecycle
+
+- Explicit durable-memory intent promotes into the long-term summary immediately.
+- Adds duplicate candidate consolidation.
+- Adds periodic long-term summary pruning under a fixed budget.
+
+
+## 3.5.0 — unified version safety + Zsh command grammar
+
+- Establishes LOOK 3.5.0 as the component baseline inside Future Crash + LOOK 1.2.0.
+- Adds context-sensitive Zsh completion for `lk` and `lo`.
+- Completes Ollama, memory, skills, system commands, and saved remote host names.
+- Unified installer records component versions and refuses accidental downgrade from version-aware releases.
+- LOOK runtime behavior from 3.4.4 is otherwise preserved.
+
+
 ## 3.3.3 — thinking-output compatibility
 
 - Prefer Ollama's structured `message.thinking` field when available.

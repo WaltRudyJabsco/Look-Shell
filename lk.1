@@ -1,4 +1,4 @@
-.TH LK 1 "September 2026" "LOOK 3.3.3" "User Commands"
+.TH LK 1 "September 2026" "LOOK 3.8.0 / Future Crash + LOOK 1.5.0" "User Commands"
 .SH NAME
 lk \- inspect, navigate, manipulate, and ask your computer
 .br
@@ -129,6 +129,52 @@ Report key configuration without revealing it.
 .TP
 .B lk ollama access [MODE]
 Show/set conservative, workspace, power, or unsafe as the persistent profile.
+.SH MEMORY AND CRAFT
+.TP
+.B lk memory
+Show the durable summary and bounded candidate memories with importance values.
+.TP
+.B lk memory add TEXT [--importance N]
+Add a compact user memory. Importance defaults to 60 and is clamped to 1 through 100.
+.TP
+.B lk memory forget TEXT
+Remove candidate memories containing TEXT.
+.TP
+.B lk forget TEXT
+Short form of memory forget.
+.TP
+.B lk memory clear
+Clear this user's LO memory after confirmation.
+.TP
+.B lk memory clear-summary
+Clear only the long-term summary while preserving candidate memories.
+.TP
+.B lk memory prune
+Remove known reasoning/meta artifacts from persisted memory.
+.TP
+.B lk clear-memory
+Short form of memory clear.
+.TP
+.B lk skills
+Show LO's reusable bundled and locally learned assistant craft.
+.TP
+.B lk skills add TEXT
+Manually add one generalized reusable lesson to the Learned section.
+.TP
+.B lk skills forget TEXT
+Remove matching locally learned skills.
+.TP
+.B lk skills clear-learned
+Clear locally learned skills while preserving bundled release craft.
+.TP
+.B lk skills path
+Print the editable skills file path.
+.PP
+Automatic skill learning is enabled in workspace, power, and unsafe profiles and disabled in conservative.
+.PP
+LO keeps at most 20 candidate memories on disk and offers at most eight to immediate prompt attention.
+Unused memories decay during maintenance. Retrieval by itself does not reinforce a memory.
+User memory and reusable assistant skills are deliberately separate.
 .SH SETTINGS
 .TP
 .B lk settings
@@ -159,11 +205,31 @@ It uses the same underlying state and commands; it is not a second configuration
 .B lscp [PATH]
 ;
 .B lrm [PATH]
-;
-.B lmk PATH
-;
-.B mkd DIR
 .
+.TP
+.B lmk FILE.ext
+Create an empty file through LOOK's undo journal.
+.TP
+.B lmk DIR/
+Create a directory and enter it. The creation is journaled for
+.B lk undo
+.
+.TP
+.B lmk -f NAME
+Force file creation when the name is ambiguous.
+.TP
+.B lmk -d NAME
+Force directory creation and enter it.
+.TP
+.B mkd DIR
+Compatibility wrapper for
+.B lmk -d DIR
+.
+.PP
+A trailing slash is directory intent. Names with a filename suffix and dotfiles imply file intent.
+Extensionless names are prompted as directory or file. The choice is accepted immediately from a single key; Return is not required.
+Missing parent directories for file creation require confirmation.
+Undo removes only an unchanged empty created file or an empty created directory.
 .SH SHORTCUTS
 l/ls smart view; ll details; ld directories; lf files; lt tree; lr recent; lz sizes;
 zll fuzzy jump + look; cdl jump + details; f find anywhere; lh home; lo Ollama chat;
@@ -183,3 +249,88 @@ sections; tool activity remains distinct.
 .I ~/.zsh_secrets
 .br
 .I ~/.config/look/
+
+.SH COMPLETION
+LOOK installs context-sensitive Zsh completion for
+.B lk
+and
+.B lo
+under ~/.config/look/completions.
+Commands such as
+.B lk ollama
+,
+.B lk memory
+, and
+.B lk skills
+complete their valid subcommands. The
+.B lmk
+completion exposes file/directory force flags and existing parent directories.
+Saved Ollama host names are completed dynamically.
+LO completion stops at its command/options layer so free-form prompt text remains free-form.
+.SH VERSION SAFETY
+Future Crash + LOOK installers write a versioned install manifest under
+~/.local/share/look/install_manifest.json.
+A current installer refuses to overwrite a newer unified release unless
+.B --force-downgrade
+is supplied deliberately.
+Historical installers predating this guard cannot be retroactively protected.
+
+.SH MEDIA
+.TP
+.B lk media
+Show the active supported media player and track.
+.TP
+.B lk media toggle
+Toggle play/pause, then report the resulting player state and track.
+.TP
+.B lk media next
+Advance to the next track, then report the resulting player state and track.
+.TP
+.B lk media prev
+Return to the previous track, then report the resulting player state and track.
+.TP
+.B lk media stop
+Stop playback, or pause on players without a distinct stop command, then report the resulting state.
+.PP
+On macOS, LOOK currently controls running Music or Spotify applications.
+On Linux, LOOK uses the MPRIS ecosystem through playerctl.
+.SH INTELLIGENCE VERSIONS
+.TP
+.B lk skills version
+Show the installed skills schema, bundled skills-pack version, and count of locally learned skills.
+.TP
+.B lk skills update [FILE]
+Refresh the Bundled skills section from LOOK's built-in pack or a compatible external skills file.
+The locally Learned section is preserved.
+.PP
+LO user memory carries a data schema version independent of the LOOK application version.
+
+.SH FAST MEDIA ALIASES
+.TP
+.B mm
+Toggle play/pause.
+.TP
+.B mn
+Advance to the next track.
+.TP
+.B mp
+Return to the previous track.
+.SH PAGING
+Long informational output from commands such as
+.B lk memory
+and
+.B lk skills
+is passed through LOOK's pager when appropriate.
+
+.SH LO PERSONALITY AND THINKING
+.TP
+.B lk personality [lo|robot|max|philosopher]
+List or select the active LO personality instruction pack.
+.TP
+.B lk thinking [light|adaptive|deep]
+List or select requested reasoning depth.
+.TP
+.B lk think-display [compact|full|quiet]
+List or select visible thinking presentation. Compact uses a rolling live thought view.
+.PP
+Personality and thinking settings do not alter the LO access/capability profile.
