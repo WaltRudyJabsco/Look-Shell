@@ -1,3 +1,99 @@
+## 4.3.0 — Living Memory compiler
+
+- Memory schema 3: candidates → durable atoms → domain summaries → compact core.
+- Relevant retrieval replaces dumping the entire memory pool into every prompt.
+- More permissive candidate admission plus competitive eviction.
+- Periodic idle compaction using Living AI.
+- Machine/runtime state excluded from user memory.
+- Schema-2 summaries preserved as inactive legacy text.
+- Help, commands, settings, and Zsh completions audited to current behavior.
+
+## 4.2.3 — Authoritative file receipts
+
+- Canonical absolute paths in create/write receipts.
+- Mutation receipts explicitly outrank conversational memory.
+- Retrospective/question/feedback turns no longer trip the filesystem-execution guard.
+- Future Crash child-shell aware shell title support.
+
+## 4.2.2 — Reload-safe shell functions
+
+- Clear stale LOOK aliases before defining `lo`, `fc`, `rst`, and related wrappers.
+- Fixes Zsh alias expansion parse errors on `rb` after upgrading from alias-based releases.
+
+## 4.2.1 — Permissioned filesystem reach
+
+- Added explicit outside-workspace path grants: once/session/always/personal.
+- Added `lk access` management surface.
+- Host, not the model, owns permission decisions.
+- External-path writes, reads, copies, moves, reveals and directory operations use the same boundary.
+- Noninteractive/background operations fail closed when a grant is absent.
+
+## 4.2.0 — Ownership + transaction history
+
+- Terminal owner titles for LOOK/LO and idle shell.
+- `lk undo list` and `lk undo skip`.
+- READY/BLOCKED undo classification.
+- Hard mutation-success receipts prevent hallucinated fallback success.
+- Canonical home-folder destination normalization for Downloads/Desktop/Documents.
+
+## 4.1.10 — Destination fidelity + reveal
+
+- Restored actual copy/move destination resolver.
+- Explicit named-folder destination contract.
+- Added cross-platform `reveal_path` and `lk reveal PATH`.
+- Filesystem tool failures no longer tear down LO.
+
+## 4.1.9 — Keep-alive payload fix
+
+- Send numeric `keep_alive: -1` for interactive Ollama chat requests.
+- Fixes HTTP 400 introduced in 4.1.8 on Ollama servers that reject the string form.
+
+## 4.1.8 — Warm primary model
+
+- Interactive LO chat keeps the selected Ollama model resident indefinitely.
+- Performance stats classify warm/cold tasks.
+- Corrected VRAM/model-size labels.
+
+## 4.1.7 — Ergonomics and observability
+
+- Shift-Tab = Tab marking in filer.
+- ← parent and → enter/open navigation.
+- Clearer Clipboard / Copy To / Move To footer ordering.
+- Waiting spinners on genuinely blocking operations.
+- `lk ai stats` rolling performance diagnostics.
+- Thinking effort and thinking-display both visible in AI surface.
+
+## 4.1.6 — Broker liveness hardening
+
+- Socket health is authoritative for singleton detection.
+- Stale PID reuse no longer blocks broker startup.
+- Serve-loop exceptions are contained.
+- `lk memory` wakes durable queued work when the broker is absent.
+
+## 4.1.5 — Resident broker refresh
+
+- Added broker/core version handshake.
+- Automatically replaces stale Living AI processes after upgrades.
+- `lk ai status` exposes the runtime core version.
+
+## 4.1.4 — Candidate reinforcement
+
+- Equivalent memory evidence now reinforces active candidates.
+- Existing-candidate overlap can rescue an extractor NONE.
+- Added persistent consolidated-count diagnostics.
+
+## 4.1.3 — Memory evidence receipts
+
+- Living Memory no longer depends exclusively on one model extraction verdict.
+- Added deterministic obvious-evidence fallback for clear preferences/project state.
+- Added extraction diagnostics/counters to `lk memory`.
+
+## 4.1.2 — Multi-client inference coordination
+
+- Added per-process inference leases and background permit checks to Living AI.
+- `lk ai status` now reports coordinated client count/labels.
+- Existing LOOK foreground lease behavior remains compatible.
+
 ## 4.1.1 — Broker status semantics
 
 - `lk ai status` returns exit code 0 when it successfully reports a stopped broker.
