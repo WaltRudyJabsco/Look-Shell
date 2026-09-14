@@ -17,7 +17,7 @@ try:
 except Exception:
     readline = None
 
-VERSION="4.3.1"
+VERSION="4.6.1"
 
 LOOK_WORDMARK = r"""       ██╗      ██╗  ██╗
        ██║      ██║ ██╔╝
@@ -39,8 +39,14 @@ SKILLS_FILE=STATE_DIR/"skills.md"
 UNDO_FILE=STATE_DIR/"undo.json"
 UNDO_SKIPPED_FILE=STATE_DIR/"undo_skipped.json"
 ACCESS_FILE=STATE_DIR/"access.json"
+APPS_FILE=STATE_DIR/"apps.json"
+SHORTCUT_POLICY_FILE=STATE_DIR/"shortcut_policy"
+COMFY_CONFIG_FILE=STATE_DIR/"comfy.json"
+SCHEDULE_FILE=STATE_DIR/"schedule.json"
+SCHEDULE_HISTORY_FILE=STATE_DIR/"schedule_history.json"
 _SESSION_PATH_GRANTS=[]
 _ONCE_PATH_GRANTS=[]
+_FILESYSTEM_ACCESS_PROFILE="workspace"
 UNDO_TRASH=STATE_DIR/"undo_trash"
 UNDO_LIMIT=20
 MEMORY_QUEUE=STATE_DIR/"memory_queue"
@@ -230,6 +236,7 @@ def _ai_command(args):
         print(f"  jobs        {reply.get('jobs',0)}")
         print(f"  memory      {reply.get('memory',0)}")
         print(f"  skills      {reply.get('skills',0)}")
+        print(f"  schedules   {reply.get('schedules',0)}")
         print(f"  current     {reply.get('current') or 'idle'}")
         runtime=str(reply.get('core_version') or 'legacy')
         version_note="" if runtime==VERSION else f" · installed {VERSION} · restart pending"
@@ -861,7 +868,7 @@ def _help_color(body):
         return body
     reset="\033[0m"; bold="\033[1m"; cyan="\033[36m"; magenta="\033[35m"
     section_names={"LOOK","INSPECT","SYSTEM","FILE CARD","FILE ACTIONS","SHORTCUTS","LIVE FILTER / SELECTION","HELP PAGER"}
-    shortcut_tokens=("l / ls","ll","ld","lf","lt","lr","lz","zll WORD","cdl WORD",
+    shortcut_tokens=("lk","lkl","lkd","lkf","lkt","lkr","lkz","zll WORD","cdl WORD",
                      "fznv","f","rs","rb","lh","lo","lo ASK")
     out=[]
     in_shortcuts=False
@@ -931,12 +938,13 @@ AI / OLLAMA
   lo @HOST [ASK]       use another Ollama host for this session
   lo --conservative      read/search only for this session
   lo --workspace         workspace tools + explicit path grants (default)
-  lo --power             shell commands · confirm each
+  lo --power             shell tools · known read-only inspections auto-run;
+                         other commands use native once/session confirmation
   lo --unsafe            unrestricted shell for this session
   lk o --no-start ...    never start a missing local server
   lk ollama            Ollama + selected-host status
   lk ollama models     model panel · Enter select · X enable/disable
-  lk ollama test       benchmark current model
+  lk ollama test       benchmark LOOK-selected model
   lk ollama test --all compare enabled installed models
   lk ollama host       list saved + reachable Ollama hosts
   lk ollama host NAME  make NAME the persistent default
@@ -1019,12 +1027,48 @@ LO PERSONALITY + THINKING
   lk thinking MODE     light · adaptive · deep
   lk think-display     show thinking presentation
   lk think-display MODE compact · full · quiet
-  lk settings          configure all of these interactively
+  lk settings [SEARCH] searchable control room for all settings
+
+VISION + GENERATIVE MEDIA
+  lk vision IMAGE [QUESTION]
+                       send a local image to the selected Ollama vision model
+  lo ... IMAGE.png    vision-capable models attach explicit image paths automatically
+  lk comfy            status for optional/managed ComfyUI
+  lk comfy start|stop|restart
+                       manage LOOK-installed ComfyUI process
+  lk comfy discover   scan home + mounted drives for old Comfy/A1111 model libraries
+  lk comfy bootstrap  rerun managed GPU install/model setup
+  lk comfy host URL   configure local/remote Comfy API endpoint
+  lk comfy workflow PATH
+                       configure an API-format workflow using __PROMPT__,
+                       __NEGATIVE__, and optional __SEED__ placeholders
+  lk generate PROMPT  queue generation, save output under ~/Pictures/LOOK,
+                       and preview the first result when configured
+
+SCHEDULER
+  lk schedule                 list persistent jobs
+  lk schedule in 30m PROMPT   run once later
+  lk schedule every 2h PROMPT recurring interval
+  lk schedule daily 08:00 PROMPT
+                              recurring local-clock job
+  lk schedule pause|resume|remove|run ID
+                              manage jobs; resident LOOK AI dispatches them
+
+DESKTOP BRIDGE
+  lk open PATH          open local path in preferred/default graphical app
+  lk preview PATH       Quick Look on macOS; default/preferred app elsewhere
+  lk reveal PATH        reveal path in Finder/file manager
+  lk apps               show preferred apps by category
+  lk apps video vlc     set preferred video app
+  lk apps pdf system    return PDF handling to OS default
+  categories            browser · editor · image · pdf · video · audio
+                        LO uses open_path / preview_path / reveal_path rather than
+                        inventing platform-specific app commands
 
 SYSTEM
   lk home              friendly LOOK home screen
   lk doctor            check the environment
-  lk settings          unified interactive settings panel
+  lk settings [SEARCH] searchable settings control room
   lk profile           portable LOOK identity status
   lk profile backup [DEST] [--keep N]
                        create/remember rotating profile backups
@@ -1058,16 +1102,16 @@ FILE ACTIONS
   lk undo skip         abandon newest BLOCKED record; filesystem unchanged
 
 SHORTCUTS
-  l / ls   smart view          ll       details
-  ld       directories         lf       files
-  lt       tree                lr       recent
-  lz       sizes               zll WORD jump + look
-  cdl WORD jump + details      fznv     fuzzy edit
-  f        find anywhere → LOOK
-  lh       LOOK home           lo       Ollama chat
-  lo ASK   ask immediately     rs       reset ritual
-  rb       reload zsh          webterm  terminal over Tailscale
-  commands same as lk help     command ls = real Unix ls
+  CANONICAL  lk detail · lk dirs · lk files · lk tree · lk recent · lk size
+  FAST       lkl · lkd · lkf · lkt · lkr · lkz   (LOOK namespace; always installed)
+  OPTIONAL   ll · ld · lf · lt · lr · lz          (only when collision policy allows)
+  l          smart view            zll WORD jump + look
+  cdl WORD   jump + details        fznv     fuzzy edit
+  f          find anywhere → LOOK  lh       LOOK home
+  lo         Ollama chat           rs       reset ritual
+  rb         reload zsh            webterm  terminal over Tailscale
+  lk shortcuts                    inspect/set shortcut policy
+  command ls                      always the real Unix ls
   terminal title shows owner: ● LOOK · ● LO · ● FUTURE CRASH · ◌ FUTURE CRASH SHELL
 
 LIVE FILTER / SELECTION
@@ -1239,11 +1283,30 @@ def _doctor_body():
     print(f"  {'✓' if web_key else '·'} web search key")
     print(f"  {'✓' if memory_ok else '✗'} persistent memory")
 
-    print("\nPREVIEW · optional")
+    print("\nAI CAPABILITIES · optional")
+    try:
+        caps=_ollama_capabilities(_ollama_base(),_preferred_ollama_model()) or []
+    except Exception:
+        caps=[]
+    print(f"  {'✓' if 'vision' in caps else '·'} vision input · {_preferred_ollama_model()}")
+    comfy_ok,_=_comfy_probe()
+    comfy_cfg=_load_comfy_config()
+    print(f"  {'✓' if comfy_ok else '·'} ComfyUI · {comfy_cfg['host']} · {'ready' if comfy_ok else 'offline'}")
+    print(f"  {'✓' if comfy_cfg.get('workflow') else '·'} image workflow · {comfy_cfg.get('workflow') or 'not configured'}")
+    print(f"  ✓ scheduler · {sum(1 for j in _load_schedule() if j.get('enabled',True))} active")
+
+    print("\nDESKTOP BRIDGE · optional")
+    system=platform.system()
+    opener=(shutil.which("open") if system=="Darwin" else (shutil.which("xdg-open") if system!="Windows" else "startfile"))
+    quicklook=bool(system=="Darwin" and shutil.which("qlmanage"))
     image_preview=bool(shutil.which("chafa"))
-    pdf_preview=image_preview and bool(shutil.which("pdftoppm") or (platform.system()=="Darwin" and shutil.which("qlmanage")))
-    print(f"  {'✓' if image_preview else '·'} image preview" + ("" if image_preview else " · install chafa to enable"))
-    print(f"  {'✓' if pdf_preview else '·'} PDF image preview" + ("" if pdf_preview else " · needs image preview + PDF rasterizer"))
+    pdf_preview=image_preview and bool(shutil.which("pdftoppm") or quicklook)
+    print(f"  {'✓' if opener else '·'} system opener" + (f" · {opener}" if opener else " · unavailable"))
+    print(f"  {'✓' if quicklook else '·'} Quick Look" + ("" if system=="Darwin" else " · macOS only"))
+    print(f"  {'✓' if image_preview else '·'} terminal image preview" + ("" if image_preview else " · chafa optional"))
+    print(f"  {'✓' if pdf_preview else '·'} PDF preview helper" + ("" if pdf_preview else " · pdftoppm/Quick Look optional"))
+    for app in ("vlc","mpv"):
+        if shutil.which(app): print(f"  ✓ media helper · {app}")
 
     good=all(ok for _,ok in checks+files) and memory_ok
     print("\n"+("Everything looks good." if good else "LOOK found something worth checking."))
@@ -1268,6 +1331,8 @@ def _empty_memory():
             "last_extraction_at": 0, "last_extraction": "never",
             "extractions_total": 0, "extractions_candidate": 0, "extractions_none": 0,
             "consolidations_total": 0, "promotions_total": 0,
+            "candidate_merges_total": 0, "candidate_local_suppressed": 0,
+            "candidate_expired_total": 0,
             "compiler_base": "", "compiler_model": "",
             "candidate_evictions": 0}
 
@@ -1462,10 +1527,29 @@ def _load_memory():
                 "extractions_none":max(0,int(data.get("extractions_none",0) or 0)),
                 "consolidations_total":max(0,int(data.get("consolidations_total",0) or 0)),
                 "promotions_total":max(0,int(data.get("promotions_total",0) or 0)),
+                "candidate_merges_total":max(0,int(data.get("candidate_merges_total",0) or 0)),
+                "candidate_local_suppressed":max(0,int(data.get("candidate_local_suppressed",0) or 0)),
+                "candidate_expired_total":max(0,int(data.get("candidate_expired_total",0) or 0)),
                 "candidate_evictions":max(0,int(data.get("candidate_evictions",0) or 0)),
                 "last_compiled_at":float(data.get("last_compiled_at",0) or 0),
                 "compiler_base":str(data.get("compiler_base",""))[:500],
                 "compiler_model":str(data.get("compiler_model",""))[:200]}
+        # Schema 3 has no permanent legacy tier. Fold an old compact summary into
+        # one scoped durable atom if it is not already represented, then retire it.
+        legacy=str(result.get("legacy_summary","")).strip()
+        if legacy and not _looks_environmental_memory(legacy):
+            if _durable_memory_match(result,legacy) is None:
+                result.setdefault("durable",[]).append({
+                    "text":legacy[:700],
+                    "domain":_memory_domain(legacy),
+                    "importance":72,
+                    "uses":1,
+                    "created_at":now,
+                    "last_reinforced":now,
+                })
+                result["durable"]=result["durable"][-MEMORY_DURABLE_LIMIT:]
+                result["last_compiled_at"]=0
+            result["legacy_summary"]=""
         result=_prune_contaminated_memory(result)
         _save_memory(result)
         return result
@@ -1944,11 +2028,16 @@ def _decay_memories(memory, now=None):
         memory.setdefault("last_decay_at",now)
         return memory
     kept=[]
+    expired=0
     for item in memory.get("memories",[]):
         importance=max(0,int(item.get("importance",50))-points)
         if importance>0:
             item["importance"]=importance
             kept.append(item)
+        else:
+            expired+=1
+    if expired:
+        memory["candidate_expired_total"]=int(memory.get("candidate_expired_total",0))+expired
     kept.sort(key=lambda x:int(x.get("importance",0)),reverse=True)
     memory["memories"]=kept[:MEMORY_CANDIDATE_LIMIT]
     memory["last_decay_at"]=now
@@ -2072,11 +2161,6 @@ def _memory_command(args):
         core=str(memory.get("core_summary","")).strip()
         print("  CORE SUMMARY")
         print("  "+(core or "No compact durable memory yet."))
-        legacy=str(memory.get("legacy_summary","")).strip()
-        if legacy:
-            shown=legacy if len(legacy)<=118 else legacy[:115]+"…"
-            print(f"  {_c('LEGACY (inactive)','2')} {shown}")
-
         summaries=memory.get("domain_summaries",{}) or {}
         print("\n  DURABLE DOMAINS")
         if summaries:
@@ -2123,8 +2207,9 @@ def _memory_command(args):
         print(f"  living AI · {'running' if broker.get('ok') else 'stopped'} · memory queue {queue_n} · last maintenance {_age_label(memory.get('last_maintenance_at',0))}")
         total=int(memory.get("extractions_total",0)); kept=int(memory.get("extractions_candidate",0)); none=int(memory.get("extractions_none",0))
         consolidated=int(memory.get("consolidations_total",0))
-        print(f"  extraction · {memory.get('last_extraction','never')} {_age_label(memory.get('last_extraction_at',0))} · {kept}/{total} candidate · {none} none")
-        print(f"  compiler · promoted {int(memory.get('promotions_total',0))} · consolidated {consolidated} · evicted {int(memory.get('candidate_evictions',0))} · last {_age_label(memory.get('last_compiled_at',0))}")
+        print(f"  extraction · {memory.get('last_extraction','never')} {_age_label(memory.get('last_extraction_at',0))} · {kept}/{total} candidate · {none} none · {int(memory.get('candidate_local_suppressed',0))} local")
+        print(f"  metabolism · merged {int(memory.get('candidate_merges_total',0))} · promoted {int(memory.get('promotions_total',0))} · expired {int(memory.get('candidate_expired_total',0))} · evicted {int(memory.get('candidate_evictions',0))}")
+        print(f"  compiler · consolidated {consolidated} · last {_age_label(memory.get('last_compiled_at',0))}")
         if memory.get("last_worker_error"):
             print(f"  worker error · {str(memory.get('last_worker_error'))[:120]}")
         print("  recent stores both sides of each exchange; display shows user side only")
@@ -2481,12 +2566,16 @@ Important guidance:
   "remember this", and "this is important" are normally memory-worthy.
 - Recent conversational continuity matters even when a fact may not be permanent.
   Decay will handle forgetting later.
+- "sidebar", "no need to remember this", "just for now", and similar language mean
+  conversation-local context: RECENT should retain the exchange, but return NONE here so it
+  does not enter candidate/durable memory unless the user separately marks it long-term.
 - User memory must be grounded in what the USER actually said or clearly confirmed.
   Never turn an assistant suggestion into a user preference merely because the assistant proposed it.
   A bare acknowledgement such as "nice", "thanks", or "okay" does not establish a new preference.
 - Return NONE for mechanical turns, acknowledgements, disposable commands, or content-free chatter.
 - When the exchange changes the state of an ongoing project, establishes a working convention,
-  or states a preference likely to affect later answers, prefer a candidate over NONE.
+  states a preference likely to affect later answers, or reveals a reusable choice/pattern,
+  prefer a modest candidate over NONE. Candidate memory is intentionally noisier than durable memory.
 - Do not store assistant technique here; reusable assistant craft belongs in skills.
 - Do not output analysis, reasoning, headings, or commentary.
 
@@ -2822,6 +2911,26 @@ def _learn_from_exchange(base, model, user_text, assistant_text, profile):
 
 
 
+def _conversation_local_memory_intent(user_text):
+    """Language that says: useful now, but do not promote into durable user memory."""
+    low=" ".join(str(user_text or "").split()).casefold()
+    phrases=(
+        "sidebar",
+        "no need to remember this",
+        "don't remember this",
+        "do not remember this",
+        "don't put this in memory",
+        "do not put this in memory",
+        "don't put this in long-term memory",
+        "do not put this in long-term memory",
+        "don't worry about remembering this",
+        "just for now",
+        "temporary question",
+        "temporary test",
+    )
+    return any(p in low for p in phrases)
+
+
 def _durable_memory_intent(user_text):
     low=" ".join(str(user_text or "").split()).casefold()
     phrases=(
@@ -2991,6 +3100,7 @@ def _consolidate_memory_candidates(memory):
                 old["uses"]=int(old.get("uses",1))+int(item.get("uses",1))
                 old["created_at"]=min(float(old.get("created_at",time.time())),float(item.get("created_at",time.time())))
                 old["last_reinforced"]=max(float(old.get("last_reinforced",0)),float(item.get("last_reinforced",0)),time.time())
+                memory["candidate_merges_total"]=int(memory.get("candidate_merges_total",0))+1
                 merged=True
                 break
         if not merged:
@@ -3043,16 +3153,17 @@ def _remember_exchange(base, model, memory, user_text, assistant_text, profile="
     memory["compiler_base"]=str(base)[:500]
     memory["compiler_model"]=str(model)[:200]
 
-    candidate=_extract_memory_candidate(base,model,user_text,assistant_text)
-    source="model"
+    local_only=_conversation_local_memory_intent(user_text)
+    candidate=None if local_only else _extract_memory_candidate(base,model,user_text,assistant_text)
+    source="local-only" if local_only else "model"
     forced_idx=None
-    if not candidate:
+    if not candidate and not local_only:
         candidate=_obvious_memory_candidate(user_text)
         source="obvious"
-    if not candidate:
+    if not candidate and not local_only:
         candidate=_explicit_memory_hint(user_text)
         source="explicit"
-    if not candidate:
+    if not candidate and not local_only:
         reinforcement=_reinforcement_from_existing(user_text,memory)
         if reinforcement:
             importance,text,forced_idx=reinforcement
@@ -3065,12 +3176,16 @@ def _remember_exchange(base, model, memory, user_text, assistant_text, profile="
 
     memory["last_extraction_at"]=now
     memory["extractions_total"]=int(memory.get("extractions_total",0))+1
+    if local_only:
+        memory["candidate_local_suppressed"]=int(memory.get("candidate_local_suppressed",0))+1
+        memory["last_extraction"]="local-only"
     if candidate:
         memory["extractions_candidate"]=int(memory.get("extractions_candidate",0))+1
         memory["last_extraction"]=f"candidate:{source}"
     else:
         memory["extractions_none"]=int(memory.get("extractions_none",0))+1
-        memory["last_extraction"]="none"
+        if not local_only:
+            memory["last_extraction"]="none"
 
     durable=_durable_memory_intent(user_text)
     durable_text=""
@@ -3513,13 +3628,19 @@ def _prompt_path_access(workspace,target,capability):
 
 
 def _safe_workspace_path(workspace, raw_path=".", capability="read", prompt_access=True):
-    """Resolve a path inside workspace or an explicit user-approved extension."""
+    """Resolve a path under the active LO filesystem capability profile."""
     workspace=Path(workspace).resolve()
     raw_path=raw_path or "."
     candidate=Path(raw_path).expanduser()
     if not candidate.is_absolute():
         candidate=workspace/candidate
     candidate=candidate.resolve()
+
+    # UNSAFE is intentionally unrestricted for this LO session. The user has
+    # already accepted the session-level warning; asking again for every path
+    # creates a contradictory second permission system.
+    if _FILESYSTEM_ACCESS_PROFILE=="unsafe":
+        return candidate
 
     if _path_access_allowed(workspace,candidate,capability):
         return candidate
@@ -4440,6 +4561,93 @@ def _tool_move_path(workspace, source, destination):
     return _journal_move(src,dst)
 
 
+DESKTOP_APP_CATEGORIES=("browser","editor","image","pdf","video","audio")
+
+
+def _load_apps():
+    try:
+        data=json.loads(APPS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data,dict): return {}
+        return {k:str(v) for k,v in data.items() if k in DESKTOP_APP_CATEGORIES and str(v).strip()}
+    except (OSError,ValueError,json.JSONDecodeError):
+        return {}
+
+
+def _save_apps(apps):
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    _atomic_json(APPS_FILE,{k:v for k,v in apps.items() if k in DESKTOP_APP_CATEGORIES and v})
+    try: os.chmod(APPS_FILE,0o600)
+    except OSError: pass
+
+
+def _path_app_category(path):
+    import mimetypes
+    path=Path(path)
+    suffix=path.suffix.casefold()
+    mime,_=mimetypes.guess_type(str(path))
+    if suffix in {".html",".htm",".xhtml"}: return "browser"
+    if suffix==".pdf": return "pdf"
+    if mime:
+        if mime.startswith("image/"): return "image"
+        if mime.startswith("video/"): return "video"
+        if mime.startswith("audio/"): return "audio"
+        if mime.startswith("text/"): return "editor"
+    if suffix in {".md",".txt",".json",".yaml",".yml",".toml",".py",".js",".ts",".css",".csv",".xml",".ini",".conf",".zsh",".sh"}:
+        return "editor"
+    return ""
+
+
+def _desktop_launch(target, category="", preview=False):
+    """Open/preview a local path outside the terminal using OS defaults or preferences."""
+    target=Path(target).expanduser().resolve()
+    if not target.exists():
+        return f"{'Preview' if preview else 'Open'} failed: not found: {target}"
+    category=category or _path_app_category(target)
+    apps=_load_apps()
+    preferred=apps.get(category,"system")
+    system=platform.system()
+    try:
+        if preview and system=="Darwin" and shutil.which("qlmanage"):
+            subprocess.Popen(["qlmanage","-p",str(target)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            return f"PREVIEW OK · {target} · Quick Look"
+        if system=="Darwin":
+            cmd=["open"]
+            if preferred and preferred!="system":
+                cmd.extend(["-a",preferred])
+            cmd.append(str(target))
+        elif system=="Windows":
+            if preferred and preferred!="system":
+                cmd=[preferred,str(target)]
+            else:
+                os.startfile(str(target))  # type: ignore[attr-defined]
+                return f"{'PREVIEW' if preview else 'OPEN'} OK · {target} · system"
+        else:
+            if preferred and preferred!="system":
+                binary=shutil.which(preferred) or (preferred if Path(preferred).exists() else None)
+                if not binary:
+                    return f"Open failed: preferred {category or 'app'} is unavailable: {preferred}"
+                cmd=[binary,str(target)]
+            else:
+                opener=shutil.which("xdg-open")
+                if not opener:
+                    return "Open unavailable: xdg-open was not found."
+                cmd=[opener,str(target)]
+        subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        action="PREVIEW" if preview else "OPEN"
+        app=preferred if preferred!="system" else "system"
+        return f"{action} OK · {target} · {category or 'file'} · {app}"
+    except OSError as exc:
+        return f"{'Preview' if preview else 'Open'} failed: {exc}"
+
+
+def _open_host_path(path):
+    return _desktop_launch(path,preview=False)
+
+
+def _preview_host_path(path):
+    return _desktop_launch(path,preview=True)
+
+
 def _reveal_host_path(path):
     """Reveal a path in the host file manager without mutating it."""
     target=Path(path).expanduser().resolve()
@@ -4472,6 +4680,27 @@ def _tool_reveal_path(workspace, path):
     return _reveal_host_path(target)
 
 
+def _tool_open_path(workspace,path):
+    target=_safe_workspace_path(workspace,path,"read")
+    return _open_host_path(target)
+
+
+def _tool_preview_path(workspace,path):
+    target=_safe_workspace_path(workspace,path,"read")
+    return _preview_host_path(target)
+
+
+def open_command(args,preview=False):
+    if not args:
+        print(f"usage: lk {'preview' if preview else 'open'} PATH")
+        return 2
+    target=Path(" ".join(args)).expanduser()
+    result=_preview_host_path(target) if preview else _open_host_path(target)
+    print(_action_result(result))
+    ok=result.startswith("PREVIEW OK" if preview else "OPEN OK")
+    return 0 if ok else 1
+
+
 def reveal_command(args):
     if not args:
         print("usage: lk reveal PATH")
@@ -4498,6 +4727,7 @@ def _tool_make_directory(workspace, path):
 
 
 LO_PROFILES=("conservative","workspace","power","unsafe")
+_SESSION_COMMAND_GRANTS=set()
 
 
 LO_PERSONALITIES=("lo","robot","max","philosopher")
@@ -4825,8 +5055,8 @@ def lo_access(args):
         rows=[
             ("conservative","read/search workspace + web; no writes"),
             ("workspace","bounded LOOK file tools inside starting workspace"),
-            ("power","workspace tools + shell commands; confirm each command"),
-            ("unsafe","shell commands without per-command confirmation"),
+            ("power","workspace tools + safe inspections; other shell commands ask natively"),
+            ("unsafe","unrestricted files + shell; persistent selection is pre-authorized"),
         ]
         for name,desc in rows:
             marker="✓" if name==current else " "
@@ -4838,19 +5068,90 @@ def lo_access(args):
         print(f"LOOK OLLAMA · unknown access profile: {profile}")
         print("  choose: conservative · workspace · power · unsafe")
         return 1
+    if profile=="unsafe" and current!="unsafe":
+        print(_c("LO UNSAFE · persistent access","31"))
+        print("  unrestricted filesystem paths and shell commands will be enabled")
+        print("  future LO sessions will start UNSAFE without asking again")
+        print("  commands run with your current user privileges and environment")
+        try:
+            answer=input("Set persistent unsafe mode? [y/N] ").strip().lower()
+        except (EOFError,KeyboardInterrupt):
+            print()
+            return 0
+        if answer not in {"y","yes"}:
+            print("· cancelled")
+            return 0
     _save_lo_profile(profile)
     print(f"✓ LO access · {profile}")
     return 0
 
-def _confirm_command(command):
-    print()
-    print(_ansi_label("command ›","33"),command)
+def _command_words(command):
     try:
-        answer=input("Allow command? [y/N] ").strip().lower()
+        import shlex
+        return shlex.split(str(command or ""),posix=True)
+    except ValueError:
+        return []
+
+
+def _inspection_command(command):
+    """Known non-mutating shell inspections that POWER may run without prompting."""
+    words=_command_words(command)
+    if not words:
+        return False
+    # Shell composition/redirection changes semantics; require confirmation.
+    if re.search(r"[;&|><`$()]",str(command)):
+        return False
+    exe=Path(words[0]).name
+
+    universal={"--version","-V","--help","-h"}
+    if len(words)==2 and words[1] in universal and exe not in {"rm","mv","cp","dd","kill","pkill"}:
+        return True
+
+    if exe in {"pwd","whoami","uname","hostname","which","whereis","type","id","uptime"}:
+        return True
+    if exe=="ollama" and len(words)>=2 and words[1] in {"list","ps","show","--version","-v","version"}:
+        return True
+    if exe=="git" and len(words)>=2 and words[1] in {"status","branch","log","diff","show","rev-parse","remote"}:
+        # Explicitly reject flags commonly used to mutate despite the subcommand.
+        return not any(w in {"--delete","-D","-d","--force","-f","--set-upstream-to"} for w in words[2:])
+    if exe=="nvidia-smi":
+        return True
+    if exe in {"ls","stat","file","du","df","ps","lsof","env","printenv"}:
+        return True
+    return False
+
+
+def _command_grant_key(command):
+    # Session permission is intentionally exact-command, not executable-wide.
+    return " ".join(str(command or "").split()).strip()
+
+
+def _native_confirm(kind,detail,allow_session=False):
+    """Reusable terminal-owned confirmation; never delegated to the model."""
+    print()
+    print(_ansi_label(f"{kind} ›","33"),detail)
+    prompt="[y] once"
+    if allow_session:
+        prompt+=" · [s] allow command this session"
+    prompt+=" · Enter/Esc cancel › "
+    try:
+        answer=input(prompt).strip().casefold()
     except (EOFError,KeyboardInterrupt):
         print()
-        return False
-    return answer in {"y","yes"}
+        return "cancel"
+    if answer in {"y","yes","once"}:
+        return "once"
+    if allow_session and answer in {"s","session"}:
+        return "session"
+    return "cancel"
+
+
+def _confirm_command(command):
+    choice=_native_confirm("command",command,allow_session=True)
+    if choice=="session":
+        _SESSION_COMMAND_GRANTS.add(_command_grant_key(command))
+    return choice!="cancel"
+
 
 def _confirm_unsafe_session():
     print(_c("LO UNSAFE","31"))
@@ -4870,7 +5171,7 @@ def _command_tool():
         "description":(
             "Run a shell command on the computer running LOOK. Use this in power/unsafe sessions for executing, "
             "testing, installing, inspecting, building, cleaning, or administering beyond LOOK's bounded file tools. "
-            "Prefer inspection before destructive or system-wide mutation."
+            "Prefer inspection before destructive or system-wide mutation. Do not ask the user to type yes/confirm in chat; LOOK itself owns any required native confirmation prompt."
         ),
         "parameters":{"type":"object","properties":{
             "command":{"type":"string","description":"Shell command to execute with zsh -lc"},
@@ -4900,9 +5201,11 @@ def _run_command_tool(workspace,args,profile):
     except (TypeError,ValueError):
         timeout=120
 
-    if profile=="power" and not _confirm_command(command):
-        return "Command denied by user."
-
+    if profile=="power":
+        grant_key=_command_grant_key(command)
+        trusted=_inspection_command(command) or grant_key in _SESSION_COMMAND_GRANTS
+        if not trusted and not _confirm_command(command):
+            return "Command denied by user."
     shell=shutil.which("zsh")
     if not shell:
         return "Command tool failed: zsh is not available on PATH"
@@ -4911,7 +5214,7 @@ def _run_command_tool(workspace,args,profile):
         proc=subprocess.run(
             [shell,"-lc",command],
             cwd=str(cwd),
-            stdin=None,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -4930,12 +5233,75 @@ def _run_command_tool(workspace,args,profile):
     except OSError as exc:
         return f"Command tool failed: {exc}"
 
+def _capability_tools():
+    return [
+        {"type":"function","function":{
+            "name":"generate_image",
+            "description":"Generate a local image through configured ComfyUI and save it to LOOK's image output folder. Use when the user explicitly asks to create/generate/render an image.",
+            "parameters":{"type":"object","properties":{
+                "prompt":{"type":"string"},
+                "negative":{"type":"string"},
+                "seed":{"type":"integer"}
+            },"required":["prompt"]}
+        }},
+        {"type":"function","function":{
+            "name":"schedule_prompt",
+            "description":"Schedule an LO background request for later or recurring execution. Use only when the user explicitly asks for future or recurring work.",
+            "parameters":{"type":"object","properties":{
+                "kind":{"type":"string","enum":["in","every","daily"]},
+                "spec":{"type":"string","description":"Duration like 30m/2h or daily time HH:MM"},
+                "prompt":{"type":"string"}
+            },"required":["kind","spec","prompt"]}
+        }},
+        {"type":"function","function":{
+            "name":"schedule_list",
+            "description":"List LOOK's persistent scheduled jobs. Read-only.",
+            "parameters":{"type":"object","properties":{}}
+        }},
+    ]
+
+
+def _run_capability_tool(name,args,workspace,profile):
+    if name=="generate_image":
+        ok,_=_comfy_probe()
+        if not ok:
+            return "Image generation unavailable: ComfyUI is not reachable. Run `lk comfy` or `lk comfy discover`."
+        success,result=_comfy_generate(
+            args.get("prompt",""),
+            args.get("negative",""),
+            args.get("seed"),
+            open_result=True,
+        )
+        return ("IMAGE OK · " if success else "IMAGE FAILED · ")+result
+    if name=="schedule_prompt":
+        try:
+            job=_schedule_add(
+                str(args.get("kind","")),
+                str(args.get("spec","")),
+                str(args.get("prompt","")),
+                workspace=workspace,
+                profile=profile,
+            )
+            return f"SCHEDULE OK · {job['id']} · {job['kind']} {job['spec']} · next {_when_label(job['next_run'])}"
+        except Exception as exc:
+            return f"SCHEDULE FAILED · {exc}"
+    if name=="schedule_list":
+        rows=_load_schedule()
+        if not rows: return "No scheduled jobs."
+        return "\n".join(
+            f"{j.get('id')} · {'on' if j.get('enabled',True) else 'off'} · {j.get('kind')} {j.get('spec')} · next {_when_label(j.get('next_run',0)) if j.get('next_run') else 'done'} · {j.get('prompt','')}"
+            for j in rows[:40]
+        )
+    return f"Unknown capability tool: {name}"
+
+
 def _lo_tools(profile):
     tools=_filesystem_tools()
     if profile=="conservative":
-        tools=[t for t in tools if t.get("function",{}).get("name") in {"list_files","inspect_directory","read_file","search_files","reveal_path"}]
+        tools=[t for t in tools if t.get("function",{}).get("name") in {"list_files","inspect_directory","read_file","search_files","reveal_path","open_path","preview_path"}]
     tools.extend(_information_tools())
     tools.extend(_system_inspection_tools())
+    tools.extend(_capability_tools())
     if profile in {"power","unsafe"}:
         tools.append(_command_tool())
     return tools
@@ -5114,6 +5480,390 @@ def _tool_inspect_directory(workspace, raw_path=".", recursive=False, max_entrie
     return json.dumps(payload,ensure_ascii=False)
 
 
+def _shortcut_collision_kind(name):
+    """Best-effort current shell/system collision classification."""
+    # Python cannot see parent-shell aliases/functions; the managed zsh layer
+    # performs the authoritative runtime check. Here we report builtins/files.
+    if name in {"fc","cd","pwd","echo","read","type"}:
+        return "builtin"
+    resolved=shutil.which(name)
+    return f"executable · {resolved}" if resolved else "free/alias/function unknown until rb"
+
+
+def _shortcuts_command(args):
+    policy="polite"
+    try:
+        raw=SHORTCUT_POLICY_FILE.read_text(encoding="utf-8").strip().casefold()
+        if raw in {"polite","force"}: policy=raw
+    except OSError:
+        pass
+
+    if args and args[0] in {"polite","force"}:
+        policy=args[0]
+        STATE_DIR.mkdir(parents=True,exist_ok=True)
+        SHORTCUT_POLICY_FILE.write_text(policy+"\n",encoding="utf-8")
+        try: os.chmod(SHORTCUT_POLICY_FILE,0o600)
+        except OSError: pass
+        print(f"LOOK shortcuts · {policy} · run rb to apply")
+        if policy=="force":
+            print("  force may replace existing aliases/functions; builtins and executables still win")
+        return 0
+
+    if args and args[0] in {"reset","default"}:
+        try: SHORTCUT_POLICY_FILE.unlink()
+        except OSError: pass
+        print("LOOK shortcuts · polite · run rb to apply")
+        return 0
+
+    _title("LOOK SHORTCUTS",f"policy · {policy}")
+    print("  CANONICAL")
+    print("    lk detail   lk dirs   lk files   lk tree   lk recent   lk size")
+    print("  FAST LOOK NAMESPACE · always installed")
+    print("    lkl         lkd       lkf        lkt       lkr         lkz")
+    print("  ULTRA-SHORT · opportunistic")
+    mapping=[("ll","lkl"),("ld","lkd"),("lf","lkf"),("lt","lkt"),("lr","lkr"),("lz","lkz")]
+    for name,target in mapping:
+        print(f"    {name:<4} → {target:<4} · {_shortcut_collision_kind(name)}")
+    print("\n  polite  existing aliases/functions/builtins/executables win")
+    print("  force   replace aliases/functions; builtins/executables still win")
+    print("\n  lk shortcuts polite")
+    print("  lk shortcuts force")
+    print("  rb                         apply shell changes")
+    return 0
+
+
+def _apps_command(args):
+    apps=_load_apps()
+    if not args or args[0] in {"list","status"}:
+        _title("LOOK APPS","desktop bridge")
+        system=platform.system()
+        print(f"  platform     {system}")
+        print(f"  system open  {'open' if system=='Darwin' else ('startfile' if system=='Windows' else (shutil.which('xdg-open') or 'unavailable'))}")
+        for category in DESKTOP_APP_CATEGORIES:
+            value=apps.get(category,"system")
+            state=value
+            if value!="system" and system!="Darwin" and not (shutil.which(value) or Path(value).exists()):
+                state=f"{value} · unavailable"
+            print(f"  {category:<11} {state}")
+        print("\n  lk apps CATEGORY APP      set preferred app")
+        print("  lk apps CATEGORY system   return category to OS default")
+        print("  lk open PATH              open in preferred/default app")
+        print("  lk preview PATH           Quick Look on macOS; preferred/default app elsewhere")
+        print("  lk reveal PATH            show in Finder/file manager")
+        return 0
+    category=args[0].casefold()
+    if category not in DESKTOP_APP_CATEGORIES or len(args)<2:
+        print("usage: lk apps <browser|editor|image|pdf|video|audio> <APP|system>")
+        return 2
+    value=" ".join(args[1:]).strip()
+    if value.casefold() in {"default","system","auto"}:
+        apps.pop(category,None)
+        _save_apps(apps)
+        print(f"LOOK apps · {category} · system")
+        return 0
+    apps[category]=value
+    _save_apps(apps)
+    print(f"LOOK apps · {category} · {value}")
+    return 0
+
+
+
+def _load_comfy_config():
+    data={
+        "host":"http://127.0.0.1:8188",
+        "workflow":"",
+        "output_dir":str(HOME/"Pictures"/"LOOK"),
+        "auto_preview":True,
+        "install_path":"",
+        "python":"",
+    }
+    try:
+        loaded=json.loads(COMFY_CONFIG_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded,dict):
+            data.update({k:v for k,v in loaded.items() if k in data})
+    except (OSError,ValueError,TypeError):
+        pass
+    return data
+
+
+def _save_comfy_config(data):
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    _atomic_json(COMFY_CONFIG_FILE,data)
+    try: os.chmod(COMFY_CONFIG_FILE,0o600)
+    except OSError: pass
+
+
+def _comfy_probe(host=None,timeout=1.2):
+    import urllib.request
+    host=(host or _load_comfy_config()["host"]).rstrip("/")
+    try:
+        with urllib.request.urlopen(host+"/system_stats",timeout=timeout) as response:
+            data=json.load(response)
+        return True,data
+    except Exception:
+        return False,{}
+
+
+def _discover_comfy_paths():
+    roots=[
+        HOME/"ComfyUI",HOME/"comfyui",HOME/"Applications"/"ComfyUI",
+        HOME/"Documents"/"ComfyUI",HOME/"Downloads"/"ComfyUI",
+        Path("/opt/ComfyUI"),Path("/srv/ComfyUI"),
+    ]
+    found=[]
+    for root in roots:
+        if root.exists() and (root/"main.py").exists():
+            found.append(root.resolve())
+    # Locate likely legacy model folders without recursively walking all of HOME.
+    model_roots=[]
+    for root in found:
+        for rel in ("models/checkpoints","models/unet","models/diffusion_models"):
+            p=root/rel
+            if p.exists(): model_roots.append(p.resolve())
+    return found,model_roots
+
+
+def _comfy_model_inventory(model_roots,limit=40):
+    exts={".safetensors",".ckpt",".pt",".pth",".gguf"}
+    rows=[]
+    for root in model_roots:
+        try:
+            for path in root.iterdir():
+                if path.is_file() and path.suffix.casefold() in exts:
+                    rows.append((path.name,path.stat().st_size,path))
+        except OSError:
+            pass
+    rows.sort(key=lambda x:x[1],reverse=True)
+    return rows[:limit]
+
+
+def _comfy_replace_placeholders(obj,prompt,negative,seed):
+    if isinstance(obj,dict):
+        return {k:_comfy_replace_placeholders(v,prompt,negative,seed) for k,v in obj.items()}
+    if isinstance(obj,list):
+        return [_comfy_replace_placeholders(v,prompt,negative,seed) for v in obj]
+    if isinstance(obj,str):
+        if obj=="__PROMPT__": return prompt
+        if obj=="__NEGATIVE__": return negative
+        if obj=="__SEED__": return int(seed)
+        return obj.replace("__PROMPT__",prompt).replace("__NEGATIVE__",negative).replace("__SEED__",str(seed))
+    return obj
+
+
+def _comfy_generate(prompt,negative="",seed=None,open_result=True):
+    import urllib.request, urllib.parse, random
+    cfg=_load_comfy_config()
+    host=str(cfg["host"]).rstrip("/")
+    workflow_path=Path(str(cfg.get("workflow") or "")).expanduser()
+    if not workflow_path.exists():
+        return False,"No Comfy workflow configured. Run `lk comfy workflow PATH` with an API-format workflow JSON."
+    try:
+        workflow=json.loads(workflow_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False,f"Workflow could not be read: {exc}"
+    seed=int(seed if seed is not None else random.randrange(1,2**31-1))
+    workflow=_comfy_replace_placeholders(workflow,str(prompt),str(negative),seed)
+    payload=json.dumps({"prompt":workflow,"client_id":"look-shell"}).encode()
+    request=urllib.request.Request(host+"/prompt",data=payload,headers={"Content-Type":"application/json"},method="POST")
+    try:
+        with urllib.request.urlopen(request,timeout=15) as response:
+            queued=json.load(response)
+        prompt_id=queued.get("prompt_id")
+        if not prompt_id:
+            return False,f"Comfy did not return a prompt id: {queued}"
+        deadline=time.time()+600
+        history={}
+        while time.time()<deadline:
+            time.sleep(1.0)
+            try:
+                with urllib.request.urlopen(host+"/history/"+str(prompt_id),timeout=5) as response:
+                    history=json.load(response)
+            except Exception:
+                continue
+            item=history.get(str(prompt_id)) or history.get(prompt_id) or {}
+            outputs=item.get("outputs") or {}
+            images=[]
+            for node in outputs.values():
+                if isinstance(node,dict):
+                    images.extend(node.get("images") or [])
+            if images:
+                output_dir=Path(str(cfg.get("output_dir") or (HOME/"Pictures"/"LOOK"))).expanduser()
+                output_dir.mkdir(parents=True,exist_ok=True)
+                saved=[]
+                for idx,image in enumerate(images[:8]):
+                    filename=image.get("filename")
+                    if not filename: continue
+                    query=urllib.parse.urlencode({
+                        "filename":filename,
+                        "subfolder":image.get("subfolder",""),
+                        "type":image.get("type","output"),
+                    })
+                    dest=output_dir/f"{time.strftime('%Y%m%d-%H%M%S')}-{idx+1}-{Path(filename).name}"
+                    with urllib.request.urlopen(host+"/view?"+query,timeout=30) as response:
+                        dest.write_bytes(response.read())
+                    saved.append(dest)
+                if saved:
+                    if open_result and bool(cfg.get("auto_preview",True)):
+                        _preview_host_path(saved[0])
+                    return True,f"{len(saved)} image(s) · "+", ".join(str(p) for p in saved)
+            status=item.get("status") or {}
+            if status.get("completed") is True and not outputs:
+                return False,"Comfy completed without image output."
+        return False,"Comfy generation timed out after 10 minutes."
+    except Exception as exc:
+        return False,f"Comfy generation failed: {exc}"
+
+
+COMFY_PID_FILE=STATE_DIR/"comfy.pid"
+COMFY_LOG_FILE=STATE_DIR/"comfy.log"
+
+
+def _comfy_pid():
+    try:
+        pid=int(COMFY_PID_FILE.read_text(encoding="utf-8").strip())
+        os.kill(pid,0)
+        return pid
+    except Exception:
+        try: COMFY_PID_FILE.unlink()
+        except OSError: pass
+        return 0
+
+
+def _comfy_launcher():
+    launcher=HOME/".local"/"bin"/"look-comfy"
+    return launcher if launcher.exists() else None
+
+
+def _comfy_start():
+    ok,_=_comfy_probe(timeout=0.6)
+    if ok:
+        return True,"ComfyUI is already reachable."
+    launcher=_comfy_launcher()
+    if not launcher:
+        return False,"Managed Comfy launcher not found. Run the installer/bootstrap on the GPU host."
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    log=open(COMFY_LOG_FILE,"ab",buffering=0)
+    try:
+        proc=subprocess.Popen(
+            [str(launcher)],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        log.close()
+        return False,f"Comfy start failed: {exc}"
+    COMFY_PID_FILE.write_text(str(proc.pid)+"\n",encoding="utf-8")
+    for _ in range(40):
+        time.sleep(0.25)
+        ok,_=_comfy_probe(timeout=0.5)
+        if ok:
+            return True,f"ComfyUI started · pid {proc.pid}"
+        if proc.poll() is not None:
+            return False,f"ComfyUI exited during startup · see {COMFY_LOG_FILE}"
+    return False,f"ComfyUI has not become ready yet · pid {proc.pid} · see {COMFY_LOG_FILE}"
+
+
+def _comfy_stop():
+    pid=_comfy_pid()
+    if not pid:
+        ok,_=_comfy_probe(timeout=0.5)
+        if ok:
+            return False,"ComfyUI is reachable but was not started by LOOK; refusing to kill an unknown process."
+        return True,"ComfyUI is not running."
+    try:
+        os.kill(pid,15)
+    except OSError as exc:
+        return False,f"Comfy stop failed: {exc}"
+    for _ in range(40):
+        time.sleep(0.1)
+        try: os.kill(pid,0)
+        except OSError:
+            try: COMFY_PID_FILE.unlink()
+            except OSError: pass
+            return True,"ComfyUI stopped."
+    return False,f"ComfyUI did not exit cleanly · pid {pid}"
+
+
+def comfy_command(args):
+    cfg=_load_comfy_config()
+    action=(args[0].casefold() if args else "status")
+    bootstrap=ROOT/"comfy_bootstrap.py"
+    if action=="bootstrap":
+        if not bootstrap.exists():
+            print("LOOK Comfy · bootstrap helper is not installed")
+            return 1
+        return subprocess.call([sys.executable,str(bootstrap),"--install"])
+    if action=="discover" and bootstrap.exists():
+        return subprocess.call([sys.executable,str(bootstrap),"--discover"])
+    if action=="start":
+        ok,msg=_comfy_start(); print(f"LOOK Comfy · {msg}"); return 0 if ok else 1
+    if action=="stop":
+        ok,msg=_comfy_stop(); print(f"LOOK Comfy · {msg}"); return 0 if ok else 1
+    if action=="restart":
+        _comfy_stop()
+        ok,msg=_comfy_start(); print(f"LOOK Comfy · {msg}"); return 0 if ok else 1
+    if action in {"status","list"}:
+        ok,stats=_comfy_probe(cfg["host"])
+        roots,model_roots=_discover_comfy_paths()
+        models=_comfy_model_inventory(model_roots)
+        _title("LOOK COMFY","generative media")
+        print(f"  host         {cfg['host']} · {'ready' if ok else 'offline'}")
+        print(f"  managed      {cfg.get('install_path') or 'not configured'}")
+        print(f"  process      {(_comfy_pid() or 'external/stopped')}")
+        print(f"  workflow     {cfg.get('workflow') or 'not configured'}")
+        print(f"  output       {cfg.get('output_dir')}")
+        print(f"  auto-preview {'on' if cfg.get('auto_preview',True) else 'off'}")
+        print(f"  installs     {len(roots)} found")
+        for root in roots[:4]: print(f"    {root}")
+        print(f"  model files  {len(models)} found in known Comfy model folders")
+        for name,size,path in models[:8]:
+            print(f"    {size/1024**3:5.1f} GB  {name}")
+        if not ok:
+            print("\n  Existing installs/models are preserved. LOOK never downloads a checkpoint automatically.")
+            print("  Configure another host with: lk comfy host http://HOST:8188")
+        return 0
+    if action=="host" and len(args)>=2:
+        cfg["host"]=args[1].rstrip("/")
+        _save_comfy_config(cfg); print(f"LOOK Comfy · host · {cfg['host']}"); return 0
+    if action=="workflow" and len(args)>=2:
+        path=Path(" ".join(args[1:])).expanduser().resolve()
+        if not path.exists(): print(f"LOOK Comfy · workflow not found: {path}"); return 1
+        cfg["workflow"]=str(path); _save_comfy_config(cfg); print(f"LOOK Comfy · workflow · {path}"); return 0
+    if action=="output" and len(args)>=2:
+        path=Path(" ".join(args[1:])).expanduser().resolve()
+        path.mkdir(parents=True,exist_ok=True)
+        cfg["output_dir"]=str(path); _save_comfy_config(cfg); print(f"LOOK Comfy · output · {path}"); return 0
+    if action=="preview" and len(args)>=2 and args[1].casefold() in {"on","off"}:
+        cfg["auto_preview"]=args[1].casefold()=="on"; _save_comfy_config(cfg)
+        print(f"LOOK Comfy · auto-preview · {'on' if cfg['auto_preview'] else 'off'}"); return 0
+    print("usage: lk comfy [status|start|stop|restart|discover|bootstrap|host URL|workflow PATH|output PATH|preview on|off]")
+    return 2
+
+
+def generate_command(args):
+    if not args:
+        print("usage: lk generate <prompt>")
+        return 2
+    prompt=" ".join(args).strip()
+    ok,_=_comfy_probe()
+    if not ok and str(_load_comfy_config().get("host","")).startswith(("http://127.0.0.1","http://localhost")):
+        started,_=_comfy_start()
+        if started:
+            ok,_=_comfy_probe()
+    if not ok:
+        print("LOOK IMAGE · ComfyUI is not reachable")
+        print("  run `lk comfy discover` to look for an older install/models")
+        print("  or configure a running server with `lk comfy host http://HOST:8188`")
+        return 1
+    print(f"{_ansi_label('image ›','35')} {prompt}")
+    with _activity("generating"):
+        success,result=_comfy_generate(prompt)
+    print(("image › " if success else "image error › ")+result)
+    return 0 if success else 1
+
+
 def _filesystem_tools():
     return [
         {"type":"function","function":{
@@ -5188,6 +5938,20 @@ def _filesystem_tools():
             "description":"Reveal an existing workspace file or folder in the host graphical file manager. Use when the user says show me the file, reveal it in Finder, open its folder, or asks where a created file is.",
             "parameters":{"type":"object","properties":{
                 "path":{"type":"string","description":"Workspace-relative path to reveal"}
+            },"required":["path"]}
+        }},
+        {"type":"function","function":{
+            "name":"open_path",
+            "description":"Open an existing local file or folder in the user's preferred/default graphical application. Use when the user asks to open, launch, play, view, or show a local artifact outside the terminal.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string","description":"Local path to open"}
+            },"required":["path"]}
+        }},
+        {"type":"function","function":{
+            "name":"preview_path",
+            "description":"Preview an existing local file outside the terminal. On macOS this prefers Quick Look; elsewhere it opens with the preferred/default graphical app. Use for quick previews of PDFs, images, media, and documents.",
+            "parameters":{"type":"object","properties":{
+                "path":{"type":"string","description":"Local path to preview"}
             },"required":["path"]}
         }},
         {"type":"function","function":{
@@ -5298,6 +6062,10 @@ def _run_filesystem_tool_impl(workspace, name, args):
             return _tool_move_path(workspace, args.get("source", ""), args.get("destination", ""))
         if name == "reveal_path":
             return _tool_reveal_path(workspace, args.get("path", ""))
+        if name == "open_path":
+            return _tool_open_path(workspace,args.get("path",""))
+        if name == "preview_path":
+            return _tool_preview_path(workspace,args.get("path",""))
         if name == "remove_path":
             return _tool_remove_path(workspace, args.get("path", ""), bool(args.get("confirmed", False)))
         if name == "make_directory":
@@ -5310,12 +6078,16 @@ def _run_filesystem_tool_impl(workspace, name, args):
         return f"File tool internal error: {type(exc).__name__}: {exc}"
     return f"Unknown file tool: {name}"
 
-LOOK_INFO_USER_AGENT="LOOK-Shell/4.3.1 (local text client)"
+LOOK_INFO_USER_AGENT="LOOK-Shell/4.6.1 (local text client)"
 
-def _run_filesystem_tool(workspace, name, args):
+def _run_filesystem_tool(workspace, name, args, profile="workspace"):
+    global _FILESYSTEM_ACCESS_PROFILE
+    previous_profile=_FILESYSTEM_ACCESS_PROFILE
+    _FILESYSTEM_ACCESS_PROFILE=str(profile or "workspace").casefold()
     try:
         return _run_filesystem_tool_impl(workspace,name,args)
     finally:
+        _FILESYSTEM_ACCESS_PROFILE=previous_profile
         # "Allow once" covers the complete tool transaction, including its
         # internal source/destination/final-path checks, then disappears.
         _ONCE_PATH_GRANTS.clear()
@@ -5705,20 +6477,24 @@ class _RollingThinking:
     def _show(self,chunk):
         if self.mode=="full":
             if not self.started:
-                print("\\n"+_ansi_label("thinking ›","2"))
+                print("\n"+_ansi_label("thinking ›","2"))
                 self.started=True
             print("  "+_c(chunk,"2"),flush=True)
             return
+        previous_count=len(self.lines)
         self.lines=(self.lines+[chunk])[-3:]
         if not sys.stdout.isatty():
             print("thinking › "+chunk,flush=True); return
-        if self.started:
-            sys.stdout.write(f"\\033[{len(self.lines)-1 if len(self.lines)>1 else 1}A")
+        if self.started and previous_count:
+            # Cursor sits immediately below the previous rolling window.
+            sys.stdout.write(f"\033[{previous_count}A")
         else:
             print()
             self.started=True
+        width=max(30,shutil.get_terminal_size((100,24)).columns-13)
         for line in self.lines:
-            sys.stdout.write("\\r\\033[2K"+_ansi_label("thinking ›","2")+" "+_c(line[:150],"2")+"\\n")
+            clipped=line if len(line)<=width else line[:max(1,width-1)]+"…"
+            sys.stdout.write("\r\033[2K"+_ansi_label("thinking ›","2")+" "+_c(clipped,"2")+"\n")
         sys.stdout.flush()
 
     def finish(self):
@@ -5739,7 +6515,37 @@ def _ollama_stream_chat(base,payload_obj):
             if not raw.strip(): continue
             yield json.loads(raw)
 
-def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_override=None, host_name=None, access_profile=None, selected_paths=None, workspace_override=None, one_shot=False):
+def _answer_inspection_command(answer):
+    """Recover a known-safe inspection command mentioned by a prose-only model answer."""
+    text=str(answer or "")
+    candidates=[]
+    candidates.extend(re.findall(r"`([^`\n]{2,180})`",text))
+    # Also catch common bare observational commands in prose.
+    for pat in (
+        r"\b(ollama\s+--version)\b",
+        r"\b(git\s+--version)\b",
+        r"\b(python3?\s+--version)\b",
+        r"\b(nvidia-smi)\b",
+    ):
+        candidates.extend(re.findall(pat,text,re.I))
+    for candidate in candidates:
+        command=" ".join(str(candidate).split()).strip()
+        if _inspection_command(command):
+            return command
+    return ""
+
+
+def _looks_like_tool_refusal(answer):
+    low=" ".join(str(answer or "").split()).casefold()
+    patterns=(
+        "i can't run","i cannot run","i don’t have permission","i don't have permission",
+        "current toolset does not provide","run it in your terminal","run the command",
+        "please run","you can run","execute it yourself","i can't check","i cannot check",
+    )
+    return any(p in low for p in patterns)
+
+
+def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_override=None, host_name=None, access_profile=None, selected_paths=None, workspace_override=None, one_shot=False, confirm_unsafe_override=False):
     """Minimal local chat; optional first prompt and web-search mode."""
     import json
     import urllib.request
@@ -5749,7 +6555,7 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
     if profile not in LO_PROFILES:
         print(f"LOOK OLLAMA · unknown access profile: {profile}")
         return 1
-    if profile=="unsafe" and not _confirm_unsafe_session():
+    if profile=="unsafe" and confirm_unsafe_override and not _confirm_unsafe_session():
         print("· cancelled")
         return 0
 
@@ -5782,6 +6588,8 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
     resident = model in running_names
     model_caps=_ollama_capabilities(base, model)
     supports_thinking=bool(model_caps and "thinking" in model_caps)
+    supports_vision=bool(model_caps and "vision" in model_caps)
+    supports_tools=(model_caps is None or "tools" in model_caps)
 
     workspace = Path(workspace_override).expanduser().resolve() if workspace_override else Path.cwd().resolve()
     selected_paths=[Path(p).expanduser().resolve() for p in (selected_paths or [])]
@@ -5797,6 +6605,10 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
         print(f"context · {len(selected_paths)} selected path{'s' if len(selected_paths)!=1 else ''}")
     if not resident:
         print(f"model · idle · loads on first prompt")
+    if supports_vision:
+        print("vision · available · include an image path in your prompt")
+    if not supports_tools:
+        print("tools · unavailable for model · host edges remain available")
     print(f"web · {web_state} · Ctrl-D to exit · Ctrl-C cancels work\n")
 
     web_tool = {
@@ -5840,7 +6652,8 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
             "For example, from workspace ~, 'make x.html in the Downloads folder' means Downloads/x.html, not ./x.html. "
             "Do not silently substitute the current directory for a named destination. If the named destination resolves outside the current WORKSPACE boundary, call the correct file tool anyway: LOOK itself will request user permission and resume the exact operation if granted. Never substitute another destination to avoid a permission request. "
             "If two different in-workspace directories genuinely match an ambiguous spoken destination, inspect/list them or ask which one rather than guessing. "
-            "Use reveal_path when the user asks to show/reveal a file in Finder or the host file manager. "
+            "Use reveal_path when the user asks to locate/reveal a file in Finder or the host file manager. "
+            "Use open_path when the user wants a local artifact opened/launched/played in a graphical app. Use preview_path for a quick external preview. "
             "TOOL RECEIPTS ARE GROUND TRUTH. After a successful filesystem tool call, report the exact canonical path from the receipt and never contradict it with memory, prior conversation, or an inferred current directory. "
             "A failed tool receipt means the requested operation did not happen unless a later successful receipt proves otherwise. "
             "Use write_file only for intentional textual creation or editing. Only mutate files when the user explicitly asks. "
@@ -5883,7 +6696,8 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
         ),
         "power": (
             "ACCESS PROFILE: POWER. You may use bounded filesystem tools with explicit path grants and run_command for computer-level work. "
-            "Every shell command requires user confirmation. Prefer inspection before mutation and briefly explain destructive/system-wide actions."
+            "Known read-only inspection commands may execute automatically; other commands receive a native LOOK confirmation outside the conversation. "
+            "Never ask the user to reply yes/confirm in chat. If inspection can answer the question, call run_command directly. Prefer inspection before mutation."
         ),
         "unsafe": (
             "ACCESS PROFILE: UNSAFE. The user explicitly enabled unrestricted shell command execution for this session. "
@@ -5899,6 +6713,12 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
         "deep":"THINKING DEPTH: DEEP. Deliberate carefully on substantive work without repetitive self-commentary.",
     }
     messages.append({"role":"system","content":thinking_notes[thinking_mode]})
+    if not supports_tools:
+        messages.append({"role":"system","content":(
+            "MODEL CAPABILITY: this selected model does not support Ollama tool schemas. "
+            "Answer normally. In POWER/UNSAFE, if a simple host inspection would answer the question, "
+            "you may state the exact inspection command; LOOK can perform known read-only inspections host-side."
+        )})
 
     # Keep one stable system-message slot for user memory. Its contents are
     # refreshed against the *current* user prompt immediately before each
@@ -5936,7 +6756,16 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
         memory=_load_memory()
         messages[memory_message_index]["content"]=_memory_context(memory,prompt)
         messages=_trim_lo_history(messages, base_message_count)
-        messages.append({"role": "user", "content": prompt})
+        user_message={"role":"user","content":prompt}
+        prompt_images=_extract_prompt_images(prompt,workspace) if supports_vision else []
+        if prompt_images:
+            encoded=_encode_ollama_images(prompt_images)
+            if encoded:
+                user_message["images"]=encoded
+                print(f"{_ansi_label('vision ›','35')} {len(encoded)} image{'s' if len(encoded)!=1 else ''} attached")
+        elif _extract_prompt_images(prompt,workspace) and not supports_vision:
+            print(f"{_ansi_label('vision ›','33')} selected model does not advertise vision")
+        messages.append(user_message)
 
         # Search mode is deliberately deterministic: search first, then answer.
         if force_search:
@@ -5972,6 +6801,8 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
         mutation_succeeded=False
         last_mutation_result=""
         mutation_repair_sent=False
+        tool_refusal_repair_sent=False
+        host_repair_final=False
         runtime=_lo_runtime_policy(thinking_mode, prompt)
         task_tier,budget=_lo_budget_for(prompt,thinking_mode,selected_paths)
         task_started=time.monotonic()
@@ -6000,10 +6831,12 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
             }
             if supports_thinking:
                 payload_obj["think"]=runtime["think"]
-            tools = _lo_tools(profile)
-            if has_web and not force_search:
-                tools.append(web_tool)
-            payload_obj["tools"] = tools
+            tools=[]
+            if supports_tools and not host_repair_final:
+                tools = _lo_tools(profile)
+                if has_web and not force_search:
+                    tools.append(web_tool)
+                payload_obj["tools"] = tools
 
             try:
                 aggregate={"role":"assistant","content":"","thinking":"","tool_calls":[]}
@@ -6118,11 +6951,11 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                                 tool_content = _search_text(search_result)
                             except Exception as exc:
                                 tool_content = f"Web search failed: {exc}"
-                    elif name in {"list_files", "inspect_directory", "read_file", "search_files", "write_file", "create_text_files", "copy_path", "move_path", "remove_path", "make_directory", "reveal_path"}:
+                    elif name in {"list_files", "inspect_directory", "read_file", "search_files", "write_file", "create_text_files", "copy_path", "move_path", "remove_path", "make_directory", "reveal_path", "open_path", "preview_path"}:
                         if name in {"write_file","create_text_files"}:
                             args=_normalize_creation_destination(prompt,name,args)
                         with _activity(name.replace("_"," ")):
-                            tool_content = _run_filesystem_tool(workspace, name, args)
+                            tool_content = _run_filesystem_tool(workspace, name, args, profile)
                         if name in _LO_MUTATION_TOOLS:
                             mutation_attempted=True
                             last_mutation_result=str(tool_content)
@@ -6133,13 +6966,22 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                         print(f"{_ansi_label('system ›','36')} {name.replace('_',' ')}")
                         with _activity("inspecting"):
                             tool_content=_run_system_inspection_tool(name,args)
+                    elif name in {"generate_image","schedule_prompt","schedule_list"}:
+                        label="image" if name=="generate_image" else "schedule"
+                        print(f"{_ansi_label(label+' ›','35')} {name.replace('_',' ')}")
+                        with _activity("generating" if name=="generate_image" else "scheduling"):
+                            tool_content=_run_capability_tool(name,args,workspace,profile)
+                        print(f"{_ansi_label('result ›','33')} {tool_content.splitlines()[0]}")
                     elif name=="run_command":
                         if profile not in {"power","unsafe"}:
                             tool_content="Command execution is unavailable in this access profile."
                         else:
-                            with _activity("running command"):
+                            command_text=str(args.get("command","")).strip()
+                            is_inspection=_inspection_command(command_text)
+                            print(f"{_ansi_label('inspect ›' if is_inspection else 'command ›','36' if is_inspection else '33')} {command_text}")
+                            with _activity("inspecting" if is_inspection else "running command"):
                                 tool_content=_run_command_tool(workspace,args,profile)
-                            print(f"{_ansi_label('command ›', '33')} {tool_content.splitlines()[0]}")
+                            print(f"{_ansi_label('result ›', '33')} {tool_content.splitlines()[0]}")
                     else:
                         tool_content = f"Unknown tool: {name}"
 
@@ -6151,6 +6993,31 @@ def ollama_chat(force_search=False, initial_prompt=None, allow_start=True, host_
                 continue
 
             answer = message.get("content", "").strip()
+
+            # Some otherwise capable models reason correctly about a shell
+            # inspection but emit prose instead of crossing into a tool call.
+            # In POWER/UNSAFE, recover only known read-only inspections. LOOK
+            # executes the safe command deterministically, feeds the receipt
+            # back, and gives the model one final chance to answer.
+            if profile in {"power","unsafe"} and not tool_refusal_repair_sent:
+                repair_command=_answer_inspection_command(answer)
+                if repair_command and _looks_like_tool_refusal(answer):
+                    tool_refusal_repair_sent=True
+                    print(f"{_ansi_label('repair ›','33')} {repair_command}")
+                    with _activity("inspecting"):
+                        repair_result=_run_command_tool(workspace,{"command":repair_command,"timeout":30},profile)
+                    print(f"{_ansi_label('result ›','33')} {repair_result.splitlines()[0]}")
+                    host_repair_final=True
+                    messages.append({
+                        "role":"system",
+                        "content":(
+                            "HOST INSPECTION COMPLETE. LOOK has already completed the inspection. "
+                            f"Command: `{repair_command}`\nResult:\n{repair_result}\n"
+                            "FINAL-ANSWER-ONLY TURN: answer the user's original question directly from this result. "
+                            "Do not inspect again, do not propose another command, and do not ask the user to run anything."
+                        )
+                    })
+                    continue
 
             if mutation_required and mutation_attempted and not mutation_succeeded:
                 detail=(last_mutation_result or "filesystem mutation did not return a success receipt").strip()
@@ -6623,6 +7490,90 @@ def _ollama_capabilities(base, model):
     return [str(cap).strip().lower() for cap in caps if str(cap).strip()]
 
 
+
+VISION_EXTENSIONS={".png",".jpg",".jpeg",".webp",".gif",".bmp"}
+
+
+def _resolve_image_path(token,workspace):
+    raw=str(token or "").strip().strip("'\\\"")
+    if not raw:
+        return None
+    path=Path(os.path.expandvars(raw)).expanduser()
+    if not path.is_absolute():
+        path=Path(workspace)/path
+    try:
+        path=path.resolve()
+    except OSError:
+        return None
+    if path.exists() and path.is_file() and path.suffix.casefold() in VISION_EXTENSIONS:
+        return path
+    return None
+
+
+def _extract_prompt_images(prompt,workspace):
+    '''Find explicit local image paths in natural-language prompts without guessing filenames.'''
+    text=str(prompt or "")
+    candidates=[]
+    quoted_re = re.compile(r"[\"']([^\"']+\.(?:png|jpe?g|webp|gif|bmp))[\"']", re.I)
+    plain_re = re.compile(r"(?:^|\s)(~?\.?/?[^\s\"'`]+\.(?:png|jpe?g|webp|gif|bmp))(?=\s|$|[,.!?])", re.I)
+    candidates.extend(m.group(1) for m in quoted_re.finditer(text))
+    candidates.extend(m.group(1) for m in plain_re.finditer(text))
+    out=[]
+    seen=set()
+    for candidate in candidates:
+        path=_resolve_image_path(candidate,workspace)
+        if path and str(path) not in seen:
+            seen.add(str(path))
+            out.append(path)
+    return out[:8]
+
+
+def _encode_ollama_images(paths):
+    import base64
+    encoded=[]
+    for path in paths:
+        try:
+            encoded.append(base64.b64encode(Path(path).read_bytes()).decode("ascii"))
+        except OSError:
+            continue
+    return encoded
+
+
+def vision_command(args):
+    '''Direct one-shot image understanding through the selected vision model.'''
+    if not args:
+        print("usage: lk vision IMAGE [QUESTION...]")
+        return 2
+    image=Path(args[0]).expanduser()
+    if not image.exists():
+        print(f"LOOK VISION · not found: {image}")
+        return 1
+    base=_ollama_base()
+    model=_preferred_ollama_model()
+    caps=_ollama_capabilities(base,model) or []
+    if "vision" not in caps:
+        print(f"LOOK VISION · {model} does not advertise vision")
+        print("  choose a vision-capable model with `lk ollama models`")
+        return 1
+    question=" ".join(args[1:]).strip() or "Describe this image carefully."
+    payload={
+        "model":model,
+        "messages":[{"role":"user","content":question,"images":_encode_ollama_images([image])}],
+        "stream":False,
+        "keep_alive":-1,
+    }
+    try:
+        with _activity("looking"):
+            response=_ollama_post(base,"/api/chat",payload,timeout=180)
+    except Exception as exc:
+        print(f"LOOK VISION · {exc}")
+        return 1
+    text=str((response.get("message") or {}).get("content","")).strip()
+    print(f"{_ansi_label('vision ›','35')} {image.resolve()}")
+    print(text or "(no response)")
+    return 0
+
+
 def _load_ollama_model_prefs():
     try:
         data=json.loads(OLLAMA_MODELS_FILE.read_text(encoding="utf-8"))
@@ -6935,9 +7886,55 @@ def _benchmark_one_model(base, model):
             tool_errors.append(f"{label}: {exc}")
 
     results["tools"]=sum(checks)
+
+    # Separate from schema judgment: can the model cross from natural reasoning
+    # into a real tool call without being explicitly told which tool to invoke?
+    run_tool=_benchmark_tool(
+        "run_command",
+        "Run a shell command on the computer when inspection requires it.",
+        {"command":{"type":"string"}},["command"]
+    )
+    try:
+        response=_benchmark_chat(
+            base,model,
+            "What version of Ollama is installed on this computer? Determine it directly rather than telling me how to check.",
+            [run_tool]
+        )
+        name,args=_tool_call(response)
+        command=" ".join(str(args.get("command","")).split())
+        results["agent"]=bool(name=="run_command" and command=="ollama --version")
+    except Exception as exc:
+        results["agent"]=False
+        tool_errors.append(f"agent: {exc}")
+
     if tool_errors:
         results["tool_error"]="; ".join(tool_errors)
     return results
+
+
+def _benchmark_runtime_fit(row):
+    """Classify interactive usability without pretending speed proves GPU spill."""
+    if row.get("fatal_error") or row.get("speed_error") or "ttft" not in row:
+        return "ERROR"
+    ttft=float(row.get("ttft") or 0)
+    rate=float(row.get("rate") or 0)
+    # Deliberately broad thresholds: this is a UX warning, not a hardware diagnosis.
+    if ttft >= 20.0 or (rate and rate < 20.0):
+        return "POOR"
+    if ttft >= 8.0 or (rate and rate < 35.0):
+        return "SLOW"
+    if ttft <= 2.0 and rate >= 50.0:
+        return "EXCELLENT"
+    return "GOOD"
+
+
+def _benchmark_runtime_note(row):
+    fit=_benchmark_runtime_fit(row)
+    if fit=="POOR":
+        return "capability may be excellent; runtime is pathological · inspect `lk ai stats` / `ollama ps`"
+    if fit=="SLOW":
+        return "usable but slow for interactive LOOK"
+    return ""
 
 
 def ollama_test(all_models=False):
@@ -6957,8 +7954,26 @@ def ollama_test(all_models=False):
         models=[(m.get("name") or m.get("model") or "").strip() for m in installed]
         models=[m for m in models if m and m not in disabled]
     else:
-        model,_=_choose_ollama_model(running)
-        models=[model]
+        # `lk ollama test` means the model selected in LOOK, not whichever
+        # model happens to be resident in Ollama right now.
+        preferred=_preferred_ollama_model()
+        try:
+            installed=_ollama_tags(base)
+        except Exception as exc:
+            print(f"LOOK OLLAMA · {exc}")
+            return 1
+        installed_names=[
+            (m.get("name") or m.get("model") or "").strip()
+            for m in installed
+        ]
+        installed_names=[m for m in installed_names if m]
+        if preferred in installed_names:
+            models=[preferred]
+        else:
+            print(f"LOOK OLLAMA · selected model is not installed on this host: {preferred}")
+            if installed_names:
+                print("  choose an installed model with `lk ollama models`")
+            return 1
 
     if not models:
         if all_models and disabled:
@@ -6968,7 +7983,7 @@ def ollama_test(all_models=False):
         return 1
 
     print("LOOK MODEL TEST")
-    print("  warm-model TTFT · generation rate · exact response · LOOK tool judgment")
+    print("  warm-model TTFT · generation rate · runtime fit · exact response · tool judgment · natural agent execution")
     if all_models and disabled:
         print(f"  enabled models only · {len(disabled)} disabled")
     print()
@@ -6988,17 +8003,17 @@ def ollama_test(all_models=False):
                 pass
 
     print()
-    print(f"{'MODEL':<28} {'TTFT':>7} {'TOK/S':>8} {'TOOLS':>9} {'EXACT':>7}  CAPABILITIES")
-    print("-"*86)
+    print(f"{'MODEL':<28} {'TTFT':>7} {'TOK/S':>8} {'FIT':>10} {'TOOLS':>9} {'AGENT':>7} {'EXACT':>7}  CAPABILITIES")
+    print("-"*106)
     for row in rows:
         model=row["model"]
         if row.get("fatal_error"):
-            print(f"{model:<28} {'—':>7} {'—':>8} {'error':>9} {'—':>7}  fatal")
+            print(f"{model:<28} {'—':>7} {'—':>8} {'ERROR':>10} {'error':>9} {'—':>7} {'—':>7}  fatal")
             print(f"  error · {row['fatal_error']}")
             continue
         if row.get("speed_error"):
             caps=_model_capability_label(row.get("caps"))
-            print(f"{model:<28} {'error':>7} {'—':>8} {'—':>9} {'—':>7}  {caps}")
+            print(f"{model:<28} {'error':>7} {'—':>8} {'ERROR':>10} {'—':>9} {'—':>7} {'—':>7}  {caps}")
             print(f"  speed error · {row['speed_error']}")
             continue
 
@@ -7008,25 +8023,38 @@ def ollama_test(all_models=False):
         else:
             tools_text=f"{tools}/3"
         caps=_model_capability_label(row.get("caps"))
+        agent_text="yes" if row.get("agent") else "no"
+        fit=_benchmark_runtime_fit(row)
         print(
             f"{model:<28} "
             f"{row['ttft']:>6.2f}s "
             f"{row['rate']:>8.1f} "
+            f"{fit:>10} "
             f"{tools_text:>9} "
+            f"{agent_text:>7} "
             f"{('yes' if row['exact'] else 'no'):>7}  "
             f"{caps}"
         )
+        note=_benchmark_runtime_note(row)
+        if note:
+            print(f"  runtime note · {note}")
         if row.get("tool_error"):
             print(f"  tool note · {row['tool_error']}")
 
     good=[r for r in rows if "ttft" in r]
     tool_good=[r for r in good if isinstance(r.get("tools"),int)]
     if tool_good:
-        winner=max(tool_good, key=lambda r:(r["tools"], bool(r["exact"]), -r["ttft"], r["rate"]))
+        fit_rank={"ERROR":0,"POOR":1,"SLOW":2,"GOOD":3,"EXCELLENT":4}
+        winner=max(tool_good, key=lambda r:(fit_rank.get(_benchmark_runtime_fit(r),0),bool(r.get("agent")),r["tools"],bool(r["exact"]),-r["ttft"],r["rate"]))
+        runtime_fit=_benchmark_runtime_fit(winner)
         print(
-            f"\n  LOOK fit   {winner['model']} · tools {winner['tools']}/3 · "
+            f"\n  LOOK fit   {runtime_fit} · {winner['model']} · tools {winner['tools']}/3 · "
+            f"agent {'yes' if winner.get('agent') else 'no'} · "
             f"{winner['ttft']:.2f}s TTFT · {winner['rate']:.1f} tok/s"
         )
+        note=_benchmark_runtime_note(winner)
+        if note:
+            print(f"             {note}")
     elif good:
         winner=max(good,key=lambda r:(bool(r["exact"]),-r["ttft"],r["rate"]))
         print(
@@ -7060,21 +8088,118 @@ def _settings_share_state():
     return "off"
 
 
+def _settings_shortcut_policy():
+    try:
+        value=SHORTCUT_POLICY_FILE.read_text(encoding="utf-8").strip().casefold()
+        return value if value in {"polite","force"} else "polite"
+    except OSError:
+        return "polite"
+
+
+def _settings_memory_state():
+    memory=_load_memory()
+    durable=len(memory.get("durable",[]) or [])
+    candidates=len(memory.get("memories",[]) or [])
+    return f"{durable} durable · {candidates} candidates"
+
+
+def _settings_vision_state():
+    try:
+        caps=_ollama_capabilities(_ollama_base(),_preferred_ollama_model()) or []
+        return "available" if "vision" in caps else "model lacks vision"
+    except Exception:
+        return "unknown"
+
+
+def _settings_comfy_state():
+    cfg=_load_comfy_config()
+    ok,_=_comfy_probe(cfg["host"])
+    return ("ready" if ok else "offline") + (" · workflow" if cfg.get("workflow") else " · no workflow")
+
+
+def _settings_schedule_state():
+    rows=_load_schedule()
+    enabled=sum(1 for j in rows if j.get("enabled",True))
+    return f"{enabled} active · {len(rows)} total"
+
+
 def _settings_rows():
+    """Control-room registry: value + explanation + search vocabulary."""
     base=_ollama_base()
     return [
-        ("access", "AI", "Access profile", _load_lo_profile()),
-        ("fileaccess", "AI", "File grants", f"{len(_load_path_access())} always"),
-        ("personality", "AI", "Personality", _load_personality()),
-        ("thinking", "AI", "Thinking depth", _load_thinking()),
-        ("thinkdisplay", "AI", "Think display", _load_think_display()),
-        ("host", "AI", "Ollama host", _ollama_host_name(base)),
-        ("model", "AI", "Preferred model", _preferred_ollama_model()),
-        ("key", "AI", "Web search key", "configured" if os.environ.get("OLLAMA_API_KEY") else "not configured"),
-        ("share", "REMOTE", "Ollama tailnet share", _settings_share_state()),
-        ("sound", "EXPR", "Feedback sound", "on" if _load_feedback()["sound"] else "off"),
-        ("motion", "EXPR", "Feedback motion", _load_feedback()["motion"]),
-        ("profile", "PROFILE", "Portable profile", "configured" if _load_profile_config().get("backup_root") else "no backup"),
+        ("model","AI","Preferred model",_preferred_ollama_model(),
+         "Choose the local model LO uses. Model capability and speed can differ dramatically.",
+         "model ollama llm qwen gemma deepseek local ai gpu"),
+        ("host","AI","Ollama host",_ollama_host_name(base),
+         "Choose which local or tailnet Ollama server supplies LO.",
+         "host server ollama remote local tailscale 3090"),
+        ("access","AI","Access profile",_load_lo_profile(),
+         "Controls how much of the computer LO may use: conservative, workspace, power, or unsafe.",
+         "access permission permissions safe power shell command tools security"),
+        ("thinking","AI","Thinking depth",_load_thinking(),
+         "Controls reasoning effort: light for speed, adaptive for normal work, deep for harder problems.",
+         "thinking reasoning intelligence speed deep adaptive light"),
+        ("thinkdisplay","AI","Think display",_load_think_display(),
+         "Controls how model thinking activity appears: compact, full, or quiet.",
+         "thinking display compact full quiet animation reasoning visible"),
+        ("personality","AI","Personality",_load_personality(),
+         "Changes LO's conversational voice without changing its tools or permissions.",
+         "personality voice tone lo robot max philosopher"),
+        ("key","AI","Web search key","configured" if os.environ.get("OLLAMA_API_KEY") else "not configured",
+         "Configure the Ollama web-search key used for current external information.",
+         "web internet search key secret ollama"),
+        ("performance","AI","Performance & GPU","inspect",
+         "Open rolling LO telemetry: TTFT, tokens/sec, residency, context, model load, and GPU information.",
+         "performance gpu vram speed latency ttft tokens benchmark stats slow"),
+        ("benchmark","AI","Model benchmark","run selected",
+         "Test the selected model for warm latency, generation speed, tools, natural agent behavior, exactness, and LOOK runtime fit.",
+         "benchmark model test speed tools agent exact fit ollama"),
+        ("vision","AI","Vision input",_settings_vision_state(),
+         "Use image paths as multimodal input when the selected Ollama model advertises vision.",
+         "vision image screenshot photo multimodal chart diagram inspect picture"),
+
+        ("memory","MEMORY","Living Memory",_settings_memory_state(),
+         "Inspect durable memory, candidates, compiler state, and recent cross-session continuity.",
+         "memory remember durable candidates recent compiler long term personal preferences"),
+        ("memorycompact","MEMORY","Compact memory","run now",
+         "Ask the Living Memory compiler to rewrite durable summaries as compactly as possible.",
+         "memory compact prune summarize compiler optimize tokens"),
+
+        ("fileaccess","FILES","File grants",f"{len(_load_path_access())} always",
+         "Review folders LO may read or write outside the current workspace.",
+         "files folders path access grants permission downloads desktop documents"),
+        ("shortcuts","FILES","Shell shortcuts",_settings_shortcut_policy(),
+         "Control optional ultra-short aliases. The permanent lk* namespace is always available.",
+         "shortcut aliases shell keyboard lkl lkd lkf lkt lkr lkz ll ld lf"),
+        ("apps","DESKTOP","Preferred apps",f"{len(_load_apps())} overrides",
+         "Choose preferred apps for browser, editor, images, PDF, video, and audio. System defaults remain available.",
+         "apps applications desktop open preview video vlc mpv pdf image editor browser audio"),
+        ("comfy","MEDIA","Image generation",_settings_comfy_state(),
+         "Configure optional ComfyUI generation, discover older installs/models, choose workflow/output folder, and auto-preview results.",
+         "comfy stable diffusion image generation render workflow checkpoint model media"),
+        ("schedule","AUTOMATION","Scheduler",_settings_schedule_state(),
+         "Persistent delayed and recurring LO jobs run through the resident LOOK service.",
+         "schedule scheduler cron recurring daily every reminder later background jobs automation"),
+
+        ("share","REMOTE","Ollama tailnet share",_settings_share_state(),
+         "Expose local Ollama through Tailscale for your other machines, or turn sharing off.",
+         "remote tailscale share network ollama laptop tower"),
+        ("sound","FEEL","Feedback sound","on" if _load_feedback()["sound"] else "off",
+         "Turn LOOK's small completion/error sounds on or off.",
+         "sound audio beep feedback quiet"),
+        ("motion","FEEL","Feedback motion",_load_feedback()["motion"],
+         "Controls subtle terminal motion cues for accepted/completed work.",
+         "motion animation feedback visual subtle normal off"),
+        ("profile","PROFILE","Portable profile","configured" if _load_profile_config().get("backup_root") else "no backup",
+         "Inspect portable LOOK profile and backup configuration.",
+         "profile backup portable sync identity"),
+
+        ("doctor","SYSTEM","Doctor","run diagnostics",
+         "Check LOOK's shell integration, optional helpers, Ollama, desktop bridge, and installation health.",
+         "doctor diagnose diagnostics health broken install dependencies"),
+        ("version","SYSTEM","Versions",f"LOOK {VERSION}",
+         "Show installed Future Crash + LOOK component versions.",
+         "version release future crash look update"),
     ]
 
 
@@ -7083,7 +8208,7 @@ def _settings_pick_access():
     choices=[
         ("conservative","read/search only"),
         ("workspace","file tools + explicit path grants"),
-        ("power","shell commands · confirm each"),
+        ("power","safe inspections auto-run · other shell commands ask"),
         ("unsafe","unrestricted shell · session gate"),
     ]
     if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -7195,56 +8320,204 @@ def _settings_share_menu():
     return ollama_share([])
 
 
-def settings():
-    """Unified UI over LOOK's existing persistent settings and actions."""
+def _settings_apps_menu():
+    apps=_load_apps()
+    if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return _apps_command([])
+    payload="\n".join(
+        f"{category}\t{category:<10} {apps.get(category,'system')}"
+        for category in DESKTOP_APP_CATEGORIES
+    )+"\n"
+    result=subprocess.run(
+        ["fzf","--prompt","preferred app › ","--header","Choose a file type · Esc back",
+         "--height","~45%","--reverse","--no-multi","--delimiter","\t","--with-nth","2..",
+         "--border=rounded"],
+        input=payload,text=True,capture_output=True
+    )
+    if result.returncode!=0 or not result.stdout.strip():
+        return 0
+    category=result.stdout.split("\t",1)[0].strip()
+    current=apps.get(category,"system")
+    try:
+        value=input(f"{category} app [{current}] · type app name/path or 'system' › ").strip()
+    except (EOFError,KeyboardInterrupt):
+        print()
+        return 0
+    if not value:
+        return 0
+    return _apps_command([category,value])
+
+
+def _settings_file_access_menu():
+    rules=_load_path_access()
+    if not shutil.which("fzf") or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return _access_command([])
+    options=[
+        ("personal","Allow Desktop/Documents/Downloads read + write"),
+        ("add","Add another folder grant"),
+        ("remove","Remove a persistent folder grant"),
+        ("list","Inspect current grants"),
+        ("clear","Clear persistent + session grants"),
+    ]
+    payload="\n".join(f"{key}\t{label}" for key,label in options)+"\n"
+    result=subprocess.run(
+        ["fzf","--prompt","file access › ","--header",f"{len(rules)} persistent grant(s) · Enter choose · Esc back",
+         "--height","~45%","--reverse","--no-multi","--delimiter","\t","--with-nth","2..",
+         "--border=rounded"],
+        input=payload,text=True,capture_output=True
+    )
+    if result.returncode!=0 or not result.stdout.strip():
+        return 0
+    action=result.stdout.split("\t",1)[0].strip()
+    if action in {"personal","list","clear"}:
+        if action=="clear" and not _confirm("Clear all LO file grants? [y/N] "):
+            return 0
+        return _access_command([action] if action!="list" else [])
+    if action=="remove":
+        rules=_load_path_access()
+        if not rules:
+            print("LO access · no persistent grants")
+            return 0
+        choices="\n".join(f"{r['path']}\t{r['path']} · {'/'.join(r.get('capabilities',[]))}" for r in rules)+"\n"
+        picked=subprocess.run(
+            ["fzf","--prompt","remove grant › ","--header","Enter remove · Esc back",
+             "--height","~45%","--reverse","--no-multi","--delimiter","\t","--with-nth","2..",
+             "--border=rounded"],
+            input=choices,text=True,capture_output=True
+        )
+        if picked.returncode!=0 or not picked.stdout.strip(): return 0
+        return _access_command(["remove",picked.stdout.split("\t",1)[0].strip()])
+    if action=="add":
+        try:
+            path=input("folder path › ").strip()
+        except (EOFError,KeyboardInterrupt):
+            print(); return 0
+        if not path: return 0
+        cap=_settings_pick_choice("capability","write",[
+            ("read","read only"),("write","read + write"),
+        ],lambda args: args[0] if args else "write")
+        # _settings_pick_choice normally returns a callback's result; this lambda
+        # intentionally returns the selected string.
+        if cap not in {"read","write"}: cap="write"
+        return _access_command(["add",path,cap])
+    return 0
+
+
+def _settings_pick_shortcuts():
+    return _settings_pick_choice("shortcut policy",_settings_shortcut_policy(),[
+        ("polite","existing shell names win · recommended"),
+        ("force","replace aliases/functions only · binaries/builtins still win"),
+    ],lambda args:_shortcuts_command(args if args else []))
+
+
+def _settings_action(key):
+    """Execute one control-room row using the same underlying public machinery."""
+    if key=="access": return _settings_pick_access()
+    if key=="fileaccess": return _settings_file_access_menu()
+    if key=="apps": return _settings_apps_menu()
+    if key=="shortcuts": return _settings_pick_shortcuts()
+    if key=="personality": return _settings_pick_personality()
+    if key=="thinking": return _settings_pick_thinking()
+    if key=="thinkdisplay": return _settings_pick_think_display()
+    if key=="host": return _settings_pick_host()
+    if key=="model": return ollama_models()
+    if key=="key": return ollama_key([])
+    if key=="share": return _settings_share_menu()
+    if key=="sound": return _settings_pick_sound()
+    if key=="motion": return _settings_pick_motion()
+    if key=="profile": return _profile_status()
+    if key=="memory": return _memory_command([])
+    if key=="memorycompact": return _memory_command(["compact"])
+    if key=="performance": return _ai_stats_command()
+    if key=="benchmark": return ollama_test(False)
+    if key=="vision":
+        print("LOOK vision · include an image path in LO, or run `lk vision IMAGE [QUESTION]`")
+        return 0
+    if key=="comfy": return comfy_command([])
+    if key=="schedule": return schedule_command([])
+    if key=="doctor": return doctor()
+    if key=="version":
+        _title("versions")
+        try:
+            print(f"  release       {(ROOT.parent/'VERSION').read_text(encoding='utf-8').strip()}")
+        except OSError:
+            pass
+        print(f"  LOOK          {VERSION}")
+        try:
+            print(f"  Future Crash  {(ROOT.parent/'future-crash'/'VERSION').read_text(encoding='utf-8').strip()}")
+        except OSError:
+            pass
+        return 0
+    return 0
+
+
+def _settings_status_strip(rows):
+    """Tiny at-a-glance line: enough orientation without becoming a dashboard."""
+    values={key:value for key,_,_,value,_,_ in rows}
+    return (
+        f"model {values.get('model','?')}  ·  "
+        f"access {values.get('access','?')}  ·  "
+        f"memory {values.get('memory','?')}  ·  "
+        f"shortcuts {values.get('shortcuts','?')}"
+    )
+
+
+def settings(initial_query=""):
+    """Search-first control room over LOOK's existing settings and actions."""
+    rows=_settings_rows()
     if not (sys.stdin.isatty() and sys.stdout.isatty() and shutil.which("fzf")):
-        _title("settings")
-        for _,section,label,value in _settings_rows():
-            print(f"  {section:<7} {label:<22} {value}")
-        print("\n  interactive settings require fzf + a TTY")
+        _title("settings","control room")
+        last_section=None
+        for _,section,label,value,description,_ in rows:
+            if section!=last_section:
+                print(f"\n  {section}")
+                last_section=section
+            print(f"  {label:<24} {value}")
+            print(f"    {_c(description,'2')}")
+        print("\n  interactive search requires fzf + a TTY")
         return 0
 
+    # The search box is the navigation model: users can type concepts rather
+    # than remember taxonomy or command spellings. Hidden keywords make natural
+    # searches such as "GPU", "video", "safe", or "downloads" land correctly.
+    query=str(initial_query or "").strip()
     while True:
         rows=_settings_rows()
+        strip=_settings_status_strip(rows)
         payload="\n".join(
-            f"{key}\t{section:<7} {label:<23} {_c(value,'33') if value in {'off','not configured','unavailable'} else value}"
-            for key,section,label,value in rows
+            f"{key}\t{section:<8}\t{label}\t{value}\t{description}\t{keywords}"
+            for key,section,label,value,description,keywords in rows
         )+"\n"
-        result=subprocess.run(
-            ["fzf",
-             "--prompt","settings › ",
-             "--header","Enter change/open · Esc/q leave · existing commands still work",
-             "--height","~65%","--reverse","--no-multi",
-             "--delimiter","\t","--with-nth","2..","--ansi"],
-            input=payload,text=True,capture_output=True
+
+        preview=(
+            r"""printf '\033[1;36m%s\033[0m  \033[2m%s\033[0m\n\n%s\n\n\033[2mCurrent\033[0m  %s\n' """
+            r"""{3} {2} {5} {4}"""
         )
+        fzf_args=[
+            "fzf",
+            "--prompt","⌕ settings › ",
+            "--header",f"LOOK CONTROL ROOM  ·  {strip}\nType to search anything · Enter open/change · Ctrl-U clear · Esc leave",
+            "--height","~82%","--reverse","--no-multi",
+            "--border=rounded","--info=inline-right",
+            "--pointer=▶","--marker=◆",
+            "--delimiter","\t",
+            "--nth","2,3,4,5,6",
+            "--with-nth","2,3,4",
+            "--preview",preview,
+            "--preview-window","right,44%,wrap,border-left",
+        ]
+        if query:
+            fzf_args.extend(["--query",query])
+            query=""
+        result=subprocess.run(fzf_args,input=payload,text=True,capture_output=True)
         if result.returncode!=0 or not result.stdout.strip():
             return 0
         key=result.stdout.split("\t",1)[0].strip()
-        if key=="access":
-            _settings_pick_access()
-        elif key=="fileaccess":
-            _access_command([])
-        elif key=="personality":
-            _settings_pick_personality()
-        elif key=="thinking":
-            _settings_pick_thinking()
-        elif key=="thinkdisplay":
-            _settings_pick_think_display()
-        elif key=="host":
-            _settings_pick_host()
-        elif key=="model":
-            ollama_models()
-        elif key=="key":
-            ollama_key([])
-        elif key=="share":
-            _settings_share_menu()
-        elif key=="sound":
-            _settings_pick_sound()
-        elif key=="motion":
-            _settings_pick_motion()
-        elif key=="profile":
-            _profile_status()
+
+        # Leave a clean frame for sub-surfaces, then return to a freshly
+        # regenerated control room so changed values are visible immediately.
+        print()
+        _settings_action(key)
         print()
 
 
@@ -8527,15 +9800,15 @@ NETWORK
 
 AI
   lo  lo search    ollama  ollama models  ollama test
-  personality  thinking  think-display  ai stats  settings
-  memory  memory compact  skills  profile  ai  feedback  sound
+  personality  thinking  think-display  ai stats  settings [SEARCH]
+  memory  memory compact  skills  profile  ai  feedback  sound  vision  generate  comfy  schedule
   access  ollama access  ollama key
 
 MEDIA
   media  mm  mn  mp
 
 META
-  home  config  secrets  access  reveal  version  uninstall
+  home  config  secrets  access  apps  open  preview  reveal  version  uninstall
   help            help all        commands
 
   Direct commands remain first-class. Umbrella surfaces are optional.
@@ -8555,11 +9828,19 @@ def starter_help():
   lk feedback      motion/sound expression
 
   lo               talk to LO
-  fc               Future Crash
+  fcr              Future Crash
 
 DIRECT IS ALWAYS AVAILABLE
   lk doctor        lk disk          lk models
   lk reveal PATH   show path in Finder/file manager
+  lk open PATH     open path in preferred/default desktop app
+  lk preview PATH  preview path outside terminal
+  lk vision IMAGE [QUESTION]  inspect image with selected vision model
+  lk generate TEXT  generate image through optional ComfyUI
+  lk comfy          discover/configure local image-generation engine
+  lk schedule       delayed + recurring LO jobs
+  lk apps          desktop-app preferences
+  lk shortcuts     inspect/set polite shell shortcut policy
   lk access        manage LO filesystem grants
   lk personality  lk thinking      lk tailscale
   lk <file>        lk port 3000     lk process NAME
@@ -8961,6 +10242,191 @@ def _events_command(args):
             except OSError: pass
     return 0
 
+
+def _when_label(ts):
+    try: delta=float(ts)-time.time()
+    except Exception: return "unknown"
+    if delta<=0: return "due"
+    if delta<60: return f"in {int(delta)}s"
+    if delta<3600: return f"in {int(delta/60)}m"
+    if delta<86400: return f"in {int(delta/3600)}h"
+    return f"in {int(delta/86400)}d"
+
+
+def _load_schedule():
+    try:
+        data=json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data,list): return data
+    except (OSError,ValueError,TypeError):
+        pass
+    return []
+
+
+def _save_schedule(rows):
+    STATE_DIR.mkdir(parents=True,exist_ok=True)
+    _atomic_json(SCHEDULE_FILE,rows)
+    try: os.chmod(SCHEDULE_FILE,0o600)
+    except OSError: pass
+
+
+def _parse_duration(text):
+    m=re.fullmatch(r"\s*(\d+)\s*([smhdw])\s*",str(text or "").casefold())
+    if not m: return None
+    value=int(m.group(1)); unit=m.group(2)
+    return value*{"s":1,"m":60,"h":3600,"d":86400,"w":604800}[unit]
+
+
+def _next_daily(clock,after=None):
+    import datetime
+    after=datetime.datetime.fromtimestamp(after or time.time())
+    try:
+        hh,mm=(int(x) for x in clock.split(":",1))
+    except Exception:
+        return None
+    if not (0<=hh<=23 and 0<=mm<=59): return None
+    candidate=after.replace(hour=hh,minute=mm,second=0,microsecond=0)
+    if candidate.timestamp()<=after.timestamp():
+        candidate+=datetime.timedelta(days=1)
+    return candidate.timestamp()
+
+
+def _schedule_add(kind,spec,prompt,workspace=None,profile=None):
+    rows=_load_schedule()
+    now=time.time()
+    job={
+        "id":uuid.uuid4().hex[:8],
+        "enabled":True,
+        "kind":kind,
+        "spec":str(spec),
+        "prompt":str(prompt).strip(),
+        "workspace":str(Path(workspace or Path.cwd()).resolve()),
+        "profile":profile or _load_lo_profile(),
+        "created_at":now,
+        "last_run":0,
+        "next_run":0,
+    }
+    if kind=="in":
+        seconds=_parse_duration(spec)
+        if not seconds: raise ValueError("duration must look like 10m, 2h, 1d")
+        job["next_run"]=now+seconds
+    elif kind=="every":
+        seconds=_parse_duration(spec)
+        if not seconds: raise ValueError("interval must look like 10m, 2h, 1d")
+        job["interval_s"]=seconds
+        job["next_run"]=now+seconds
+    elif kind=="daily":
+        nxt=_next_daily(spec,now)
+        if not nxt: raise ValueError("daily time must be HH:MM")
+        job["next_run"]=nxt
+    else:
+        raise ValueError("unsupported schedule kind")
+    rows.append(job)
+    _save_schedule(rows)
+    _ai_broker_wake("schedule")
+    return job
+
+
+def _schedule_due(now=None):
+    now=now or time.time()
+    return [j for j in _load_schedule() if j.get("enabled",True) and float(j.get("next_run",0) or 0)<=now and float(j.get("next_run",0) or 0)>0]
+
+
+def _schedule_advance(job,now=None):
+    now=now or time.time()
+    kind=job.get("kind")
+    if kind=="in":
+        job["enabled"]=False
+        job["next_run"]=0
+    elif kind=="every":
+        interval=max(60,int(job.get("interval_s") or _parse_duration(job.get("spec")) or 3600))
+        nxt=float(job.get("next_run",now))
+        while nxt<=now: nxt+=interval
+        job["next_run"]=nxt
+    elif kind=="daily":
+        job["next_run"]=_next_daily(str(job.get("spec")),now) or 0
+    job["last_run"]=now
+    return job
+
+
+def _schedule_dispatch_due():
+    """Queue due schedules into the normal LO background-job machinery."""
+    rows=_load_schedule()
+    now=time.time()
+    changed=False
+    dispatched=0
+    for job in rows:
+        if not job.get("enabled",True): continue
+        next_run=float(job.get("next_run",0) or 0)
+        if not next_run or next_run>now: continue
+        # Queue directly without printing; broker owns this call.
+        LO_JOBS_DIR.mkdir(parents=True,exist_ok=True)
+        job_id=uuid.uuid4().hex[:10]
+        path=LO_JOBS_DIR/f"{job_id}.json"
+        payload={
+            "id":job_id,"status":"queued","prompt":job.get("prompt",""),
+            "workspace":job.get("workspace") or str(HOME),
+            "profile":job.get("profile") or "workspace",
+            "created_at":now,"started_at":None,"finished_at":None,
+            "scheduled_from":job.get("id"),
+        }
+        _atomic_json(path,payload)
+        _schedule_advance(job,now)
+        changed=True; dispatched+=1
+    if changed:
+        _save_schedule(rows)
+    return dispatched
+
+
+def schedule_command(args):
+    rows=_load_schedule()
+    if not args or args[0] in {"list","status"}:
+        _title("LOOK SCHEDULE","persistent jobs")
+        if not rows:
+            print("  no scheduled jobs")
+        for j in rows:
+            state="on" if j.get("enabled",True) else "off"
+            nxt=_when_label(j.get("next_run",0)) if j.get("next_run") else "done"
+            print(f"  {j.get('id')}  {state:<3}  {j.get('kind')} {j.get('spec'):<8}  next {nxt:<14}  {str(j.get('prompt',''))[:72]}")
+        print("\n  add: lk schedule in 30m PROMPT")
+        print("       lk schedule every 2h PROMPT")
+        print("       lk schedule daily 08:00 PROMPT")
+        print("  manage: lk schedule pause|resume|remove ID")
+        return 0
+    action=args[0].casefold()
+    if action in {"in","every","daily"}:
+        if len(args)<3:
+            print(f"usage: lk schedule {action} SPEC PROMPT"); return 2
+        try:
+            job=_schedule_add(action,args[1]," ".join(args[2:]))
+        except ValueError as exc:
+            print(f"LOOK schedule · {exc}"); return 2
+        print(f"LOOK schedule · {job['id']} · {action} {job['spec']} · next {_when_label(job['next_run'])}")
+        return 0
+    if action in {"pause","resume","remove","run"} and len(args)>=2:
+        target=args[1]
+        found=False
+        for j in list(rows):
+            if str(j.get("id"))!=target: continue
+            found=True
+            if action=="pause": j["enabled"]=False
+            elif action=="resume":
+                j["enabled"]=True
+                if not j.get("next_run"):
+                    if j.get("kind")=="every": j["next_run"]=time.time()+int(j.get("interval_s",3600))
+                    elif j.get("kind")=="daily": j["next_run"]=_next_daily(str(j.get("spec"))) or 0
+            elif action=="remove": rows.remove(j)
+            elif action=="run":
+                j["next_run"]=time.time()
+            break
+        if not found:
+            print(f"LOOK schedule · not found: {target}"); return 1
+        _save_schedule(rows); _ai_broker_wake("schedule")
+        print(f"LOOK schedule · {action} · {target}")
+        return 0
+    print("usage: lk schedule [list|in SPEC PROMPT|every SPEC PROMPT|daily HH:MM PROMPT|pause ID|resume ID|remove ID|run ID]")
+    return 2
+
+
 def _jobs_command(args):
     try:
         files=sorted(LO_JOBS_DIR.glob("*.json"))
@@ -9104,7 +10570,8 @@ def main():
         return ollama_chat(
             force_search=force_search, initial_prompt=initial_prompt,
             allow_start=allow_start, host_override=host_override, host_name=host_name,
-            access_profile=access_profile
+            access_profile=access_profile,
+            confirm_unsafe_override=(access_profile=="unsafe")
         )
     a=sys.argv[1:]
     if not a: return render([])
@@ -9143,6 +10610,14 @@ def main():
     if cmd=="benchmark": return ollama_test(all_models=("--all" in rest))
     if cmd=="web": return ollama_key(["status"] if not rest else rest)
     if cmd=="reveal": return reveal_command(rest)
+    if cmd=="open": return open_command(rest,False)
+    if cmd=="preview": return open_command(rest,True)
+    if cmd=="vision": return vision_command(rest)
+    if cmd in {"generate","image"}: return generate_command(rest)
+    if cmd=="comfy": return comfy_command(rest)
+    if cmd in {"schedule","scheduler"}: return schedule_command(rest)
+    if cmd=="apps": return _apps_command(rest)
+    if cmd=="shortcuts": return _shortcuts_command(rest)
     if cmd=="access": return _access_command(rest)
     if cmd in ("version","--version","-V"): print(f"LOOK {VERSION}"); return 0
     if cmd=="home": return home()
@@ -9190,7 +10665,7 @@ def main():
         print(_action_result(result))
         return 0 if result.startswith("FILE OK") else 1
     if cmd=="doctor": return doctor()
-    if cmd=="settings": return settings()
+    if cmd=="settings": return settings(" ".join(rest))
     if cmd=="uninstall": return uninstall()
     if cmd=="config":
         if rest and rest[0] in {"paths","raw"}:

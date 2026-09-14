@@ -1,3 +1,108 @@
+## 4.6.1 — Memory lifecycle tuning
+
+- RECENT preserves sidebars; durable extraction does not.
+- Loosen candidate admission without loosening durable promotion.
+- Track memory metabolism: local suppression, merges, promotions, expirations, evictions.
+- Migrate and retire inactive legacy summary state.
+
+## 4.6.0 — Managed Comfy workstation
+
+- Add managed Comfy start/stop/restart lifecycle.
+- Add deep mounted-drive discovery/bootstrap helper.
+- Persist managed install metadata in Comfy config.
+- Auto-start local managed Comfy on image generation.
+- Add ready-to-run SDXL API workflow starter.
+- Add verified SDXL / FLUX Schnell FP8 starter downloads.
+- Reuse old Comfy/A1111 model libraries with external model paths rather than copying weights.
+
+## 4.5.2 — One meaningful UNSAFE confirmation
+
+- Move persistent UNSAFE consent to `lk ollama access unsafe` / LO access selection.
+- Saved UNSAFE sessions no longer nag on every `lo` invocation.
+- Explicit `--unsafe` remains a confirmed one-session override.
+
+## 4.5.1 — Unified UNSAFE capability
+
+- Thread active LO access profile through filesystem transactions.
+- `_safe_workspace_path` bypasses path grants only when the current transaction is UNSAFE.
+- WORKSPACE/POWER behavior is unchanged.
+- Fixes `~/Downloads` writes being denied even after entering UNSAFE mode.
+
+## 4.5.0 — Capability platform
+
+- Add Ollama image input and automatic image-path attachment for vision models.
+- Add optional ComfyUI discovery/config/generation bridge.
+- Add persistent delayed/recurring scheduler to Living AI.
+- Add LO tools for image generation and scheduling.
+- Add vision/media/scheduler surfaces to settings, doctor, help, and completion.
+
+## 4.4.0 — Search-first settings control room
+
+- Rebuild `lk settings` around semantic search, descriptions, preview pane, and live current values.
+- Add `lk settings SEARCH` prefiltered entry.
+- Add memory, performance, benchmark, shortcut, desktop-app, Doctor, and version surfaces.
+- Add interactive file-grant and desktop-app submenus.
+- Preserve direct-command parity: control-room actions reuse existing functions and configuration files.
+
+## 4.3.9 — Runtime-fit model testing
+
+- Add runtime-fit classification to `lk ollama test`.
+- Capability success no longer makes a 40-second-TTFT model look like an excellent LOOK choice.
+- Slow/pathological results point to performance/residency diagnostics without overdiagnosing the cause.
+
+## 4.3.8 — Polite shell namespace
+
+- Add permanent `lk*` view shortcuts: `lkl`, `lkd`, `lkf`, `lkt`, `lkr`, `lkz`.
+- Stop redefining `ls`; stop installing `lsd`, `lsf`, and `lc`.
+- Make `l`, `ll`, `ld`, `lf`, `lt`, `lr`, `lz` collision-aware optional shortcuts.
+- Add persisted `lk shortcuts polite|force` policy; builtins/executables always win.
+- Remove startup behavior that blindly unaliased users' filesystem shortcuts.
+
+## 4.3.7 — Native `fc` only
+
+- Remove the compatibility dispatcher from 4.3.6.
+- Never define `fc`; keep `fcr`/`rst` as Future Crash shortcuts.
+- On reload, stale LOOK `fc` functions are still removed so the native builtin is exposed.
+
+## 4.3.6 — `fc` compatibility dispatcher
+
+- No-argument `fc` launches Future Crash.
+- Argument-bearing `fc` delegates to native Zsh history.
+- Fixes the 4.3.5 regression where typing bare `fc` opened the history editor.
+
+## 4.3.5 — Zsh history compatibility
+
+- Stop shadowing Zsh's native `fc` history builtin.
+- On reload, remove any stale LOOK `fc` function left by older releases.
+- Replace the Future Crash short launcher with `fcr`; keep `rst`.
+- Fixes paste/history hooks accidentally invoking Future Crash with `fc -p -a /dev/null 0 0`.
+
+## 4.3.4 — Benchmark selected model
+
+- Single-model `lk ollama test` resolves from LOOK's persisted model selection.
+- Resident Ollama models no longer override the benchmark target.
+- Missing selected model on the active host now fails explicitly.
+
+## 4.3.3 — Desktop bridge + agent-loop cleanup
+
+- Gate Ollama tool schemas by selected-model capability.
+- Final-answer-only turn after host safe-inspection repair.
+- Clean spinner/result handoff.
+- Stable three-line compact thinking renderer with terminal-width clipping.
+- Add open/preview/reveal desktop tools and `lk apps` preferences.
+- Extend help/settings/doctor/completions for desktop bridge.
+
+## 4.3.2 — Terminal-native authority
+
+- Native once/session confirmation for POWER shell commands.
+- Known safe inspections execute without needless prompts.
+- Exact-command session grants.
+- Command subprocess stdin detached from LO terminal.
+- Prose-only safe-inspection repair for models that reason about a tool but fail to call it.
+- Fixed compact-thinking ANSI escapes.
+- `nocorrect lo` natural-language shell wrapper.
+- Added AGENT column to model benchmark.
+
 ## 4.3.1 — Current-prompt memory retrieval
 
 - Fix `UnboundLocalError: prompt` introduced in 4.3.0.
