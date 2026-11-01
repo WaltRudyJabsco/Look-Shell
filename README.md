@@ -1,5 +1,28 @@
 # LOOK Shell
 
+## This repository today
+
+The root `lk` and `VERSION` are **LOOK 4.8.1**. `install.sh` installs the root
+implementation. The nested `look/` directory is an older **4.0.1** snapshot;
+it is preserved for history and is not the root installer's source.
+
+The combined Fabric application and companion tools now live in
+[FutureCrash-LOOK](https://github.com/WaltRudyJabsco/FutureCrash-LOOK). Choose that repository for the combined setup;
+this repository documents its standalone implementation.
+
+```sh
+python3 lk --help
+python3 lk commands
+python3 lk help all
+```
+
+![LOOK Shell 4.8.1 help](screenshots/Help.png)
+
+Fresh capture of the root program's help with an isolated demo home.
+[CLI reference](docs/CLI.md) and the root [manual](lk.1) are generated from its
+real `help all` output; `python3 tools/command_reference.py --check` detects drift.
+The preserved nested manual belongs to the older snapshot.
+
 **Keep Unix. Lose some syntax.**
 
 LOOK is an opinionated, human-readable interaction layer for a Unix workstation. It does not replace the shell, Finder, Git, Neovim, Tailscale, or Ollama. It gives the things you already use a small shared language built around intent.

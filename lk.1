@@ -1,409 +1,284 @@
-.TH LK 1 "September 2026" "LOOK 3.8.0 / Future Crash + LOOK 1.5.0" "User Commands"
+.TH LK 1 "" "LOOK 4.8.1" "User Commands"
 .SH NAME
-lk \- inspect, navigate, manipulate, and ask your computer
-.br
-lo \- Ollama assistant with selectable local capability profiles
+lk \- standalone LOOK inspection and command reference
 .SH SYNOPSIS
-.B lk
-.RI [ command " | " thing ]
-.br
-.B lo
-.RI [ --conservative | --workspace | --power | --unsafe ]
-.RI [ @host ]
-.RI [ prompt ]
-.SH DESCRIPTION
-LOOK is a terminal-native inspection/navigation layer with fuzzy filesystem workflows,
-safe file actions, system inspection, Ollama chat, optional web search, and private remote Ollama routing.
-.B lk help
-is the authoritative live command/key glossary.
-.SH LOOK
-.B lk [THING]
-inspects a path, command, port, process, or recognized target.
-.PP
-.B lk detail [PATH]
-,
-.B lk dirs [PATH]
-,
-.B lk files [PATH]
-,
-.B lk tree [PATH]
-,
-.B lk recent [PATH]
-,
-.B lk size [PATH]
-,
-.B lk run [PATH]
-provide filesystem/project views.
-.SH INSPECT
-.B lk up
-/
-.B lk ports
-; 
-.B lk port NUMBER
-;
-.B lk process TERM
-;
-.B lk processes
-;
-.B lk pid NUMBER
-;
-.B lk git [PATH]
-;
-.B lk machine
-;
-.B lk gpu
-;
-.B lk disk
-;
-.B lk net
-;
-.B lk tailscale
-;
-.B lk env
-;
-.B lk path
-;
-.B lk why COMMAND
-.
-.SH AI / OLLAMA
-.TP
-.B lo [ASK]
-Ollama chat.
-.TP
-.B lo search [ASK]
-Chat with web search.
-.TP
-.B lo @HOST [ASK]
-Use another Ollama host for one session.
-.TP
-.B lo --conservative
-Read/search only.
-.TP
-.B lo --workspace
-Bounded workspace tools.
-.TP
-.B lo --power
-Workspace tools plus shell commands; confirm every command.
-.TP
-.B lo --unsafe
-Unrestricted shell after one explicit session-entry confirmation.
-.TP
-.B lk ollama
-Show Ollama/selected-host status.
-.TP
-.B lk ollama models
-Interactive model panel.
-.TP
-.B lk ollama test [--all]
-Benchmark current or enabled installed models.
-.TP
-.B lk ollama host
-List saved/reachable hosts.
-.TP
-.B lk ollama host NAME
-Select persistent host.
-.TP
-.B lk ollama host local
-Return to localhost.
-.TP
-.B lk ollama host NAME URL
-Save and select a host.
-.TP
-.B lk ollama host forget NAME
-Forget a host.
-.TP
-.B lk ollama share
-Share local Ollama privately through Tailscale Serve.
-.TP
-.B lk ollama share status
-Show share/proxy status.
-.TP
-.B lk ollama share off
-Stop the share.
-.TP
-.B lk ollama key
-Securely save the Ollama web-search key.
-.TP
-.B lk ollama key status
-Report key configuration without revealing it.
-.TP
-.B lk ollama access [MODE]
-Show/set conservative, workspace, power, or unsafe as the persistent profile.
-.SH MEMORY AND CRAFT
-.TP
-.B lk memory
-Show the durable summary and bounded candidate memories with importance values.
-.TP
-.B lk memory add TEXT [--importance N]
-Add a compact user memory. Importance defaults to 60 and is clamped to 1 through 100.
-.TP
-.B lk memory forget TEXT
-Remove candidate memories containing TEXT.
-.TP
-.B lk forget TEXT
-Short form of memory forget.
-.TP
-.B lk memory clear
-Clear this user's LO memory after confirmation.
-.TP
-.B lk memory clear-summary
-Clear only the long-term summary while preserving candidate memories.
-.TP
-.B lk memory prune
-Remove known reasoning/meta artifacts from persisted memory.
-.TP
-.B lk clear-memory
-Short form of memory clear.
-.TP
-.B lk skills
-Show LO's reusable bundled and locally learned assistant craft.
-.TP
-.B lk skills add TEXT
-Manually add one generalized reusable lesson to the Learned section.
-.TP
-.B lk skills forget TEXT
-Remove matching locally learned skills.
-.TP
-.B lk skills clear-learned
-Clear locally learned skills while preserving bundled release craft.
-.TP
-.B lk skills path
-Print the editable skills file path.
-.PP
-Automatic skill learning is enabled in workspace, power, and unsafe profiles and disabled in conservative.
-.PP
-LO keeps at most 20 candidate memories on disk and offers at most eight to immediate prompt attention.
-Unused memories decay during maintenance. Retrieval by itself does not reinforce a memory.
-User memory and reusable assistant skills are deliberately separate.
-.SH SETTINGS
-.TP
-.B lk settings
-Unified interactive panel for access profile, Ollama host, preferred model, web-search key, and Ollama tailnet share.
-It uses the same underlying state and commands; it is not a second configuration system.
-.SH SYSTEM
-.B lk home
-;
-.B lk doctor
-;
-.B lk config
-;
-.B lk secrets
-;
-.B lk undo
-;
-.B lk uninstall
-;
-.B lk version
-;
-.B lk help
-.
-.SH FILE ACTIONS
-.B lcp [PATH]
-;
-.B lmv [PATH]
-;
-.B lscp [PATH]
-;
-.B lrm [PATH]
-.
-.TP
-.B lmk FILE.ext
-Create an empty file through LOOK's undo journal.
-.TP
-.B lmk DIR/
-Create a directory and enter it. The creation is journaled for
-.B lk undo
-.
-.TP
-.B lmk -f NAME
-Force file creation when the name is ambiguous.
-.TP
-.B lmk -d NAME
-Force directory creation and enter it.
-.TP
-.B mkd DIR
-Compatibility wrapper for
-.B lmk -d DIR
-.
-.PP
-A trailing slash is directory intent. Names with a filename suffix and dotfiles imply file intent.
-Extensionless names are prompted as directory or file. The choice is accepted immediately from a single key; Return is not required.
-Missing parent directories for file creation require confirmation.
-Undo removes only an unchanged empty created file or an empty created directory.
-.SH SHORTCUTS
-l/ls smart view; ll details; ld directories; lf files; lt tree; lr recent; lz sizes;
-zll fuzzy jump + look; cdl jump + details; f find anywhere; lh home; lo Ollama chat;
-rs reset ritual; rb reload zsh; webterm terminal over Tailscale.
-.SH CAPABILITY MODEL
-Remote inference and local authority are separate:
-.B lo @HOST --power
-runs inference on HOST while commands execute on the computer running LOOK.
-Thinking-capable output is visually separated into
-.B thinking >
-and
-.B lo >
-sections; tool activity remains distinct.
-.SH FILES
-.I ~/.config/look/look.zsh
-.br
-.I ~/.zsh_secrets
-.br
-.I ~/.config/look/
+.B lk [command | path]
+.SH COMMANDS
+.nf
 
-.SH COMPLETION
-LOOK installs context-sensitive Zsh completion for
-.B lk
-and
-.B lo
-under ~/.config/look/completions.
-Commands such as
-.B lk ollama
-,
-.B lk memory
-, and
-.B lk skills
-complete their valid subcommands. The
-.B lmk
-completion exposes file/directory force flags and existing parent directories.
-Saved Ollama host names are completed dynamically.
-LO completion stops at its command/options layer so free-form prompt text remains free-form.
-.SH VERSION SAFETY
-Future Crash + LOOK installers write a versioned install manifest under
-~/.local/share/look/install_manifest.json.
-A current installer refuses to overwrite a newer unified release unless
-.B --force-downgrade
-is supplied deliberately.
-Historical installers predating this guard cannot be retroactively protected.
+       ██╗      ██╗  ██╗
+       ██║      ██║ ██╔╝
+       ██║      █████╔╝
+       ██║      ██╔═██╗
+       ███████╗ ██║  ██╗
+       ╚══════╝ ╚═╝  ╚═╝
 
-.SH MEDIA
-.TP
-.B lk media
-Show the active supported media player and track.
-.TP
-.B lk media toggle
-Toggle play/pause, then report the resulting player state and track.
-.TP
-.B lk media next
-Advance to the next track, then report the resulting player state and track.
-.TP
-.B lk media prev
-Return to the previous track, then report the resulting player state and track.
-.TP
-.B lk media stop
-Stop playback, or pause on players without a distinct stop command, then report the resulting state.
-.PP
-On macOS, LOOK currently controls running Music or Spotify applications.
-On Linux, LOOK uses the MPRIS ecosystem through playerctl.
-.SH INTELLIGENCE VERSIONS
-.TP
-.B lk skills version
-Show the installed skills schema, bundled skills-pack version, and count of locally learned skills.
-.TP
-.B lk skills update [FILE]
-Refresh the Bundled skills section from LOOK's built-in pack or a compatible external skills file.
-The locally Learned section is preserved.
-.PP
-LO user memory carries a data schema version independent of the LOOK application version.
+       LOOK 4.8.1 · inspect the computer
 
-.SH FAST MEDIA ALIASES
-.TP
-.B mm
-Toggle play/pause.
-.TP
-.B mn
-Advance to the next track.
-.TP
-.B mp
-Return to the previous track.
-.SH PAGING
-Long informational output from commands such as
-.B lk memory
-and
-.B lk skills
-is passed through LOOK's pager when appropriate.
+LOOK
+  lk [THING]           inspect a path, command, port, or process
+  lk [PATH]            smart filesystem view
+  lk FILE              interactive file card + paged preview
+  lk detail [PATH]     detailed view
+  lk dirs [PATH]       directories
+  lk files [PATH]      files
+  lk tree [PATH]       tree
+  lk recent [PATH]     newest first
+  lk size [PATH]       size-oriented
+  lk run [PATH]        what can I do here? (project is an alias)
 
-.SH LO PERSONALITY AND THINKING
-.TP
-.B lk personality [lo|robot|max|philosopher]
-List or select the active LO personality instruction pack.
-.TP
-.B lk thinking [light|adaptive|deep]
-List or select requested reasoning depth.
-.TP
-.B lk think-display [compact|full|quiet]
-List or select visible thinking presentation. Compact uses a rolling live thought view.
-.PP
-Personality and thinking settings do not alter the LO access/capability profile.
+INSPECT
+  lk up / ports        what is listening? (services is an alias)
+  lk port NUMBER       inspect one listening port
+  lk process TERM      find a running process (proc)
+  lk processes         browse/filter processes · Y copies PID (procs)
+  lk pid NUMBER        inspect one process ID
+  lk git [PATH]        repository status
+  lk machine / gpu     machine capabilities
+  lk disk              disk usage
+  lk net               browse network addresses · Y copies IP
+  lk tailscale         tailnet status
+  lk env / path        environment / PATH diagnostics
+  lk why COMMAND       explain command resolution
 
-.SH SELECTED PATHS TO LO
-In the interactive filer FILTER or SELECT view, press
-.B L
-to launch LO with the current marked paths as explicit context.
-If no paths are marked, the highlighted path is used.
-The files are not bulk-loaded into the model context; LO receives a path manifest and reads only what it needs through its bounded file tools.
+AI / OLLAMA
+  lo [ASK]             Ollama chat / optional first prompt
+  lo search [ASK]      chat with Ollama web search
+  lo @HOST [ASK]       use another Ollama host for this session
+  lo --conservative      read/search only for this session
+  lo --workspace         workspace tools + explicit path grants (default)
+  lo --power             shell tools · known read-only inspections auto-run;
+                         other commands use native once/session confirmation
+  lo --unsafe            unrestricted shell for this session
+  lk o --no-start ...    never start a missing local server
+  lk ollama            Ollama + selected-host status
+  lk ollama models     model panel · Enter select · X enable/disable
+  lk ollama test       benchmark LOOK-selected model
+  lk ollama test --all compare enabled installed models
+  lk ollama host       list saved + reachable Ollama hosts
+  lk ollama host NAME  make NAME the persistent default
+  lk ollama host local return to localhost
+  lk ollama host NAME URL
+                       save URL as NAME and select it
+  lk ollama host forget NAME
+                       forget a saved remote host
+  lk ollama share      share local Ollama inside the tailnet
+  lk ollama share status
+                       Tailscale Serve + LOOK proxy status
+  lk ollama share off  stop the tailnet Ollama share
+  lk ollama key        securely save the Ollama web-search key
+  lk ollama key status report key configuration; never reveal it
+  lk ollama access      show persistent LO capability profile
+  lk ollama access MODE set conservative/workspace/power/unsafe
 
-.SH FILER NAVIGATION
-Use
-.B j
-and
-.B k
-(or uppercase J/K) and the up/down arrow keys for vertical movement.
-.B L
-is reserved for the selected-path LO context handoff.
+MEMORY + CRAFT
+  lk memory            inspect Living Memory: core summary, durable domains/atoms,
+                       recent conversation, candidates, compiler diagnostics
+                       candidates are cheap hypotheses; durable memory must earn promotion
+  lk memory add TEXT   add a candidate memory (default importance 60)
+  lk memory add TEXT --importance N
+                       add with importance 1–100
+  lk memory forget TEXT
+                       remove matching candidate + durable atomic memories
+  lk forget TEXT       short form of memory forget
+  lk memory compact    force domain/core summary recompilation now
+  lk memory prune      remove known reasoning/meta/environmental artifacts
+  lk memory clear      clear this user's LO memory
+  lk memory clear-summary
+                       clear compiled summary text; durable atoms remain
+  lk memory clear-recent
+                       clear literal cross-session conversation continuity
+  lk clear-memory      short form of memory clear
+  lk skills            show LO's bundled + learned assistant craft
+  lk skills version    show skills schema / bundled pack version
+  lk skills update [FILE]
+                       update Bundled craft; preserve Learned craft
+  lk skills add TEXT   manually add a reusable learned skill
+  lk skills forget TEXT
+                       remove matching locally learned skills
+  lk skills clear-learned
+                       clear only locally learned skills
+  lk skills path       print the editable skills file path
+  lk skills state      show reinforcement confidence and feedback hits
+                       auto-learning runs in workspace/power/unsafe; conservative never writes skills
+                       natural praise/criticism may trigger conservative background reflection
 
-.SH FILESYSTEM PARENT
-In the plain filer browse state, press
-.B <
-(Shift-comma)
-to move to the real filesystem parent directory.
-This is distinct from Escape, which navigates LOOK history.
-While entering a filter, < is treated as ordinary filter text.
+MAKE
+  lmk FILE.ext         create an empty file · undoable
+  lmk DIR/             create directory + enter it · undoable
+  lmk -f NAME          force file when the name is ambiguous
+  lmk -d NAME          force directory + enter it
+                       extensionless names ask: [d]irectory or [f]ile
 
-.SH PERSISTENT WORKING SET
-Selections persist across filer directory navigation.
-Use Tab to toggle one item, A to toggle current matches, and X to clear the set.
-When the set spans locations, the status reports the total and the number visible here as
-.B SELECTED \(bu N / H HERE.
-Copy, move, remove, path-copy, clipboard, and LO-context actions use the persistent set when non-empty.
+MEDIA
+  lk media             show current player / state / track
+  lk media toggle      play / pause, then show current state
+  lk media next        next track, then show current state
+  lk media prev        previous track, then show current state
+  lk media stop        stop/pause, then show current state
+  mm / mn / mp         fast aliases: toggle / next / previous
 
-.SH PATH COMPLETION
-LOOK copy and move destination prompts support Tab completion for filesystem paths.
-The lcp, lmv, lrm, and lscp helpers use normal repeated Zsh path completion for each operand.
-.SH GLOBAL FIND
-.B f
-performs a LOOK-native global find rooted at the user's home directory.
-.B fznv
-uses the same finder and opens the selected file in Neovim.
-.SH TEMPORAL MEMORY
-Recent exchanges and semantic memory candidates carry age information.
-Memory is historical context and must not be treated as pending work.
-.SH BACKGROUND LO
-.B lo bg REQUEST
-queues one-shot LO work in the background.
-Completed or failed jobs produce durable LOOK events, surfaced automatically at a subsequent Zsh prompt.
-Use
-.B lk jobs
-and
-.B lk events
-to inspect state.
+ACCESS + PERMISSIONS
+  lk access            show persistent/session filesystem grants
+  lk access personal   permanently allow Desktop/Documents/Downloads read/write
+  lk access add PATH [read|write]
+                       permanently extend LO filesystem reach
+  lk access remove PATH
+                       revoke one persistent path grant
+  lk access clear      clear persistent + current-session grants
+                       outside-workspace tool calls can also grant once/session/always interactively
+  lk ollama access     separate capability profile: conservative/workspace/power/unsafe
 
-.SH PROFILE
-.B lk profile
-shows the portable LOOK identity.
-.B lk profile backup [DEST]
-creates rotating timestamped backups and remembers DEST.
-.B lk profile export [ZIP]
-creates a migration archive.
-.B lk profile restore SOURCE
-restores a profile after schema/path validation and creates a local safety snapshot first.
-Secrets and runtime state are excluded.
-.SH FEEDBACK
-.B lk feedback
-configures finite terminal motion and optional sound.
-.B lk sound
-toggles sound.
-Sound defaults off; motion defaults subtle; non-TTY output is silent and static.
-.SH SKILLS EXPORT
-.B lk skills export [FILE]
-writes only locally learned skills for review or promotion into a future distribution.
-\n.SH LIVING AI\n.B lk ai\nopens the AI control surface.\n.B lk ai status\nshows the resident broker, foreground state, and queue depths.\n.B lk ai start\nstarts the local broker;\n.B lk ai stop\nstops it. The broker coordinates durable background jobs, memory consolidation, and skill reflection while interactive LO work has foreground priority.\n
+LO PERSONALITY + THINKING
+  lk personality       show personality choices
+  lk personality NAME  lo · robot · max · philosopher
+  lk thinking          show thinking depth
+  lk thinking MODE     light · adaptive · deep
+  lk think-display     show thinking presentation
+  lk think-display MODE compact · full · quiet
+  lk settings [SEARCH] searchable control room for all settings
+
+SERVICES + TAILNET SHARING
+  lk services                  local/running/share status
+  lk services discover         discover Mercury Writer when possible
+  lk services set mercury PORT configure Mercury Writer explicitly
+  lk services share all        expose configured running services to tailnet
+  lk services share comfy      share one service
+  lk services unshare all      remove LOOK service shares
+  lk share                     friendly alias for `lk services share all`
+  lk share status              service/share status
+  lk share off                 unshare all LOOK services
+
+  Default LOOK service ports stay separate:
+    Ollama   → LOOK proxy HTTPS 11435
+    ComfyUI  → HTTPS 8188
+    Mercury  → configured/discovered port
+  Tailscale Serve remains tailnet-only; LOOK does not use Funnel.
+
+VISION + GENERATIVE MEDIA
+  lk vision IMAGE [QUESTION]
+                       send a local image to the selected Ollama vision model
+  lo ... IMAGE.png    vision-capable models attach explicit image paths automatically
+  lk share            share all configured/running LOOK services over Tailscale
+  lk services         inspect/configure/share local services
+  lk comfy            status for optional/managed ComfyUI
+  lk comfy start|stop|restart
+                       manage LOOK-installed ComfyUI process
+  lk comfy discover   scan home + mounted drives for old Comfy/A1111 model libraries
+  lk comfy bootstrap  rerun managed GPU install/model setup
+  lk comfy host URL   configure local/remote Comfy API endpoint
+  lk comfy workflow PATH
+                       configure an API-format workflow using __PROMPT__,
+                       __NEGATIVE__, and optional __SEED__ placeholders
+  lk generate PROMPT  queue generation, save output under ~/Pictures/LOOK,
+                       and preview the first result when configured
+
+SCHEDULER
+  lk schedule                 list persistent jobs
+  lk schedule in 30m PROMPT   run once later
+  lk schedule every 2h PROMPT recurring interval
+  lk schedule daily 08:00 PROMPT
+                              recurring local-clock job
+  lk schedule pause|resume|remove|run ID
+                              manage jobs; resident LOOK AI dispatches them
+
+DESKTOP BRIDGE
+  lk open PATH          open local path in preferred/default graphical app
+  lk preview PATH       Quick Look on macOS; default/preferred app elsewhere
+  lk reveal PATH        reveal path in Finder/file manager
+  lk apps               show preferred apps by category
+  lk apps video vlc     set preferred video app
+  lk apps pdf system    return PDF handling to OS default
+  categories            browser · editor · image · pdf · video · audio
+                        LO uses open_path / preview_path / reveal_path rather than
+                        inventing platform-specific app commands
+
+SYSTEM
+  lk home              friendly LOOK home screen
+  lk doctor            check the environment
+  lk settings [SEARCH] searchable settings control room
+  lk profile           portable LOOK identity status
+  lk profile backup [DEST] [--keep N]
+                       create/remember rotating profile backups
+  lk profile export [ZIP]
+                       create one migration archive
+  lk profile restore SOURCE [--yes]
+                       restore profile with safety snapshot
+  lk skills export [FILE]
+                       export only locally learned skills
+  lk feedback          show sound/motion settings
+  lk feedback sound on|off
+  lk feedback motion off|subtle|normal
+  lk sound             quick sound toggle
+  lk config            show installed paths + state
+  lk secrets           secrets status (never contents)
+  lk undo              undo last safe local filesystem action
+  lk uninstall         remove Future Crash + LOOK owned files
+  lk version           print version
+  lk help              this complete command/key glossary
+  LOOK_CLASSIC=1 lk    use the frozen classic presentation
+
+FILE ACTIONS
+  lcp [PATH]           LOOK-assisted copy
+  lmv [PATH]           LOOK-assisted move
+  lscp [PATH]          LOOK-assisted scp
+  lrm [PATH]           LOOK-assisted remove (confirmed)
+  lmk PATH             make directory path · undoable
+  mkd DIR              make directory and enter it
+  lk undo              undo newest safe LOOK filesystem transaction
+  lk undo list         inspect READY/BLOCKED transaction history
+  lk undo skip         abandon newest BLOCKED record; filesystem unchanged
+
+SHORTCUTS
+  CANONICAL  lk detail · lk dirs · lk files · lk tree · lk recent · lk size
+  FAST       lkl · lkd · lkf · lkt · lkr · lkz   (LOOK namespace; always installed)
+  OPTIONAL   l · ll · ld · lf · lt · lr · lz · lh · fc
+             installed only when collision policy allows; `force` may reclaim fc
+  lk         smart view            zll WORD jump + look
+  lk home    LOOK home             lk o     Ollama chat
+  f          find anywhere → LOOK  fcr      Future Crash
+  cdl WORD   jump + details        fznv     fuzzy edit
+  rs         reset ritual          rb       reload zsh
+  webterm    terminal over Tailscale
+  lk shortcuts                    inspect/set shortcut policy
+  command ls                      always the real Unix ls
+  terminal title shows owner: ● LOOK · ● LO · ● FUTURE CRASH · ◌ FUTURE CRASH SHELL
+
+LIVE FILTER / SELECTION
+  Type       filter immediately
+  j/k/↑/↓    move selection in browse/select; while typing a filter use J/K or ↑/↓
+  Tab/⇧Tab   mark / unmark highlighted item
+  A          mark all matches / clear all marked matches
+  Enter / →  open file / enter folder
+  ← / <      go up one filesystem directory
+  E          edit
+  O          open with another application
+  B          copy file object(s) to desktop clipboard
+  C / M / R  Copy To / Move To / remove
+  L          hand persistent working set to a new LO session
+  X          clear persistent working set
+  Y          copy absolute path(s) as text
+  P          print absolute path + exit
+  G          exit LOOK and make this the shell's directory
+  Esc        clear / back / cancel
+  q          quit
+
+FILE CARD
+  j / k / ↑ / ↓       scroll preview
+  Space / b            page forward / back
+  Enter                 open
+  E / O                  edit / open with
+  B / Y / P              clipboard file / copy path / print path
+  M / C / S / R          move / copy / scp / remove
+  L                        hand selected/marked paths to LO
+  q / Esc                quit
+
+HELP PAGER
+  j / k / ↑ / ↓       line down / up
+  Space / b            page forward / back
+  PgDn / PgUp          page forward / back
+  g / G                beginning / end
+  q / Esc              quit
+.fi
+.SH SOURCE
+Generated from root lk help all. The nested look/ directory is a separate older snapshot.
